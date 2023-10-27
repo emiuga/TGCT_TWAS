@@ -1,0 +1,171 @@
+---
+title: "Expression enrichment analysis (TWAS joint independent genes): Germ cell neoplasia in situ (GCNIS) dataset"
+author: "Emilio Ugalde"
+date: "April 19, 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RColorBrewer)
+library(tidyverse)
+```
+
+```{r}
+dir="~/Documents/postdoc_FW/projects/TWAS/CNIS"
+ver="_v0.3"
+```
+
+
+## Output file
+```{r}
+# File path and prefix
+file_out=paste0("../Output/PermuPV_GCNIS", ver )
+```
+
+## INPUT
+- Gene-level aggregated data set on relevant conditions
+see: Scripts/Process_GCNIS_data_v0.1.Rmd
+```{r}
+# file prefix
+file="/DerivedData/GCNIS_aggregated_20230314.txt"
+```
+
+```{r}
+read.table(paste0(dir, file), header = T) -> allData_agg
+```
+
+
+- TWAS results
+```{r}
+dir_twas <- "/home/emiuga/Documents/postdoc_FW/projects/TWAS/Manuscript/dropbox_v2/"
+file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_165FDR01_91permNOM_51LOCI.master_ANNOT.dat"
+file_twas_full <- "TWAS_testis_tgct_scca_19839uniqGENES.dat"
+twas <- read.table(paste0(dir_twas, file_twas), header=T, sep="\t" )
+full <- read.table(paste0(dir_twas, file_twas_full), header=T, sep="\t" )
+```
+
+## Distribution
+```{r}
+apply(allData_agg[,-1], 2, summary)
+```
+
+## Format data (log10 scale)
+```{r}
+allData_agg_S <- allData_agg
+allData_agg_S[,-1] <- log10(allData_agg[,-1]+1)
+```
+```{r}
+apply(allData_agg_S[,-1], 2, summary)
+```
+
+# Analysis (top TWAS)
+
+## Get list of TWAS genes
+```{r}
+# Jointly independent (57 genes)
+tlist_top <- twas[which(twas$JOINT), ]$ID
+str(tlist_top)
+```
+
+## TWAS subset (JOINT independent genes)
+```{r}
+e_twas_top <- allData_agg_S[allData_agg_S$ID%in%tlist_top,] 
+nrow(e_twas_top)
+```
+
+## Calculate observed values for the TWAS gene set
+```{r}
+# Scaled Median AVERAGE expression
+med_top_M <- apply(e_twas_top[,-1], 2, median ) 
+med_top_M
+```
+
+## Background set (genes included in TWAS)
+```{r}
+glist_bk <- allData_agg_S$ID[allData_agg_S$ID%in%full$ID]
+str(glist_bk)
+```
+
+- Subset data set
+```{r}
+e_twas_bk <- allData_agg_S[allData_agg_S$ID%in%glist_bk,]
+dim(e_twas_bk)
+```
+
+- Median expression
+```{r}
+median_e_bk <- apply(e_twas_bk[,-1], 2, median )
+median_e_bk
+```
+
+- Median expression in FULL dataset
+```{r}
+apply(allData_agg_S[,-1], 2, median ) 
+```
+
+\newpage
+# Permutation tests
+- Parameters
+```{r}
+seed=15684
+set.seed(seed)
+perm=10000
+```
+
+## Estimate MEDIAN average expression, SCALED (at a given cell-type) for a random set of genes
+
+```{r}
+# Data set SIZE
+s_size=nrow(e_twas_top)
+n_cat <- 3
+nrow(e_twas_top)
+```
+
+
+```{r, include=T, echo=T}
+X_twas <- e_twas_bk[, -1]
+# Run permutations
+P_ave_sc_median <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+for(i in 1:perm) {
+  s <- X_twas[ sample(nrow(X_twas), size=s_size),  ]
+  P_ave_sc_median[i,] <- apply(s, 2, median )
+}
+```
+- Distribution in random sets
+```{r}
+apply(P_ave_sc_median, 2, summary)
+```
+
+- Calculate perm-Pval: no. of times median average expression in random sets is equal or equal than the observed. (per condition)
+```{r}
+# Compute empirical p-value for each cell-type
+med_ave_sc_pval <- rep(NA, n_cat)
+for(i in 1:n_cat) {
+med_ave_sc_pval[i] <- ( sum(P_ave_sc_median[ ,i]>=med_top_M[i]) + 1  ) / ( perm+1 )
+}
+```
+```{r}
+names(med_ave_sc_pval) <- names(allData_agg[, -1])
+med_ave_sc_pval
+```
+## Compile results
+```{r}
+# Set order
+res_order <- c("ESC", "Spermatogenesis", "GCNIS")
+```
+
+```{r}
+out <- data.frame(Condition=names(med_ave_sc_pval[res_order]),
+                  Background=c(nrow(e_twas_bk), " ", " "), Leading=c(nrow(e_twas_top), " ", " "), # Overlapping set (no. of genes)
+                  Background=median_e_bk[res_order], Leading=med_top_M[res_order], # Median average expression
+                  PERM.PV=med_ave_sc_pval[res_order])
+out
+```
+
+## Save 
+```{r}
+file=paste0(file_out, ".dat")
+write.table(out, file=file, col.names=T, row.names=F, quote=F, sep="\t" )
+file
+```

@@ -1,0 +1,182 @@
+---
+title: "Germ cell neoplasia in situ (GCNIS) dataset"
+author: "Emilio Ugalde"
+date: "2023-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RColorBrewer)
+library(tidyverse)
+```
+
+```{r}
+dir="~/Documents/postdoc_FW/projects/TWAS/CNIS"
+```
+
+## Output
+- Gene-level aggreagated dataset on relevant cell-types
+```{r}
+file_out="/DerivedData/GCNIS_aggregated_20230314.txt"
+```
+
+## INPUT
+- GCNIS Sone dataset
+```{r}
+read.delim(paste0(dir, "/files_Kristian/OutData_GL.txt")) ->allData
+#read.delim(paste0(dir, "/files_Kristian/TECAC_TWAS_matrix.txt",header = FALSE))->MA1
+```
+
+- Gene ids
+```{r}
+hgnc <- data.table::fread(paste0(dir, "/annot/HGNC_genenames.txt"))
+```
+```{r}
+hgnc$ID <- hgnc$`Approved symbol`
+hgnc$entrez <- hgnc$`NCBI Gene ID`
+```
+
+- TWAS results
+```{r}
+dir_twas <- "/home/emiuga/Documents/postdoc_FW/projects/TWAS/Manuscript/dropbox_v2/"
+file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_165FDR01_91permNOM_51LOCI.master_ANNOT.dat"
+#file_twas_full <- "TWAS_testis_tgct_scca_19839uniqGENES.dat"
+twas <- read.table(paste0(dir_twas, file_twas), header=T, sep="\t" )
+#full <- read.table(paste0(dir_twas, file_twas_full), header=T, sep="\t" )
+```
+
+## Get list of TWAS genes
+```{r}
+# Top genes (165 FDR<0.01)
+tlist_top <- twas$ID
+```
+
+- Directionality (excludding 'Cross-tissue' panel)
+```{r}
+summary(as.factor(sign(twas[twas$PANEL_x!="Cross-tissue", ]$TWAS.Z) ))
+```
+- Up-regulated
+```{r}
+tlist_top_UP <- twas[twas$PANEL_x!="Cross-tissue" & sign(twas$TWAS.Z)>0, ]$ID
+str(tlist_top_UP)
+```
+- Dow-regulated
+```{r}
+tlist_top_DN <- twas[twas$PANEL_x!="Cross-tissue" & sign(twas$TWAS.Z)<0, ]$ID
+str(tlist_top_DN)
+```
+
+
+## Format data
+```{r}
+# NOTE: using updated ID, match with TWAS went from 105 to 117 genes
+# Merge by ENTREZ id
+allData_m <- merge(allData[-c(1:3),-c(1,2,4)], hgnc[is.na(hgnc$entrez)==F, c("ID", "entrez")], by="entrez") 
+table(allData_m$symbol==allData_m$ID)
+table(twas$ID%in%allData_m$symbol)
+table(twas$ID%in%allData_m$ID)
+```
+
+
+- Retrieve expression data for genes with valid ENTREZ id
+```{r}
+allData_g <- merge(allData[-c(1:3),-c(1,2,4,5)], hgnc[is.na(hgnc$entrez)==F, c("ID", "entrez")], by="entrez") 
+cell_names <- as.character(allData[1,-c(1,2,4,5)])
+cell_names[1] <- "ID"
+col_lim <- ncol(allData_g)-1
+allData_g <- allData_g[, c(ncol(allData_g),2:col_lim) ]
+names(allData_g) <- cell_names
+dim(allData_g)
+```
+## Heatmap
+
+```{r, eval=F}
+### Plot From Kristian
+### NOTE: seems it has bugs, did not succeed to reproduce!
+MA1[,-c(1:5)]->MA
+MA[,-c(2:29)]->MA
+MA[-c(1,3,4),]->MA
+
+MA->MA2
+
+colnames(MA2)<-MA2[1,]
+MA2[-1,]->MA2
+#colnames(MA)<-c("Symbol", "ESC1","ESC2", "ESC3","FetOv1","FetOv2","FetOv3","FetGon1","FetGon2", "FetGon3","CIS1","CIS2","CIS3","CIS_Total1","CIS_Total2","CIS_Total3","NT1","NT2","NT3", "Spgenesis1", "Spgenesis2")
+as.numeric(unlist(MA2[,-1]))->MA2[,-1]
+#as_tibble(MA)
+rownames(MA2)<-MA2$Cy3
+
+data.matrix(MA2[,-1])->MAmatrix
+heatmap(MAmatrix, Colv = NA, scale="none", cexRow=1, labRow=paste(MA[,1]), col= colorRampPalette(brewer.pal(8, "Blues"))(25))
+```
+
+```{r}
+gl15 <- c("EXOG", "GINM1", "HEATR3", "CRYL1", "USP36", "MCM3AP", "TMEM52B", "RFWD3", "CAPNS1", "UCK2", "OLR1", "ZFPM1", "ZBTB9", "LZTR1")
+
+hm1 <- allData_g[allData_g$ID%in%gl15, ]
+hm1[,-1] <- as.numeric(unlist(hm1[,-1]))
+hm1_m <- data.matrix(hm1[, -1]) 
+#hm1_m <- as.matrix(hm1[, -1]) 
+heatmap(hm1_m, Colv = NA, scale="column", cexRow=1.0, labRow=paste(hm1[, 1]), col= colorRampPalette(brewer.pal(8, "Blues"))(25))
+```
+
+## Generate FULL dataset with relevant cell-types: enbryonic stem cells (ESC), GCNIS, and Spermatogenesis
+
+```{r}
+cell_g <- allData_g[,c(1:4,11:21)]
+cell_g[,-1] <- as.numeric(unlist(cell_g[,-1]))
+#cell_gM <- data.matrix(cell_g[, -1]) 
+
+# Collapsed data set: mean expression across cell types
+cell_g_mean <- data.frame(ID=cell_g[,1], ESC=rowMeans(cell_g[,2:4]),GCNIS=rowMeans(cell_g[,5:10]),Spermatogenesis=rowMeans(cell_g[,11:15]))
+```
+
+
+```{r}
+# Aggregate by MEAN gene-level expression
+cell_g_agg <- aggregate(x = cell_g_mean[,2:4], by = list(cell_g_mean$ID), FUN = mean)
+names(cell_g_agg)[1] <- "ID"
+dim(cell_g_agg)
+```
+
+# Save aggregated dataset
+```{r}
+file_out
+write.table(cell_g_agg, file=paste0(dir, file_out), col.names=T, row.names=F, quote=F, sep="\t" )
+```
+
+# Explore visualization
+
+## Dot pot: selected 15 top genes
+```{r}
+glist15 <- c("EXOG", "GINM1", "HEATR3", "CRYL1", "USP36", "MCM3AP", "TMEM52B", "RFWD3", "CAPNS1", "UCK2", "OLR1", "ZFPM1", "ZBTB9", "LZTR1")
+str(glist15)
+```
+```{r}
+# Subset eset
+e_top15 <- cell_g_agg[cell_g_agg$ID%in%glist15, ]
+dim(e_top15)
+```
+```{r}
+## EUM: scale expression of genes per cell-type level
+e_top15_s <- e_top15
+e_top15_s[,-1] <- apply(e_top15_s[,-1 ], 2, function(x) {scale(x, center=F)})
+```
+
+```{r}
+e_top15_long <- gather(e_top15_s, condition, ave_exp, ESC:Spermatogenesis,factor_key=TRUE)
+```
+```{r}
+e_top15_long <- e_top15_long %>%
+  mutate(ID=ID %>% fct_relevel("EXOG", "GINM1", "HEATR3", "CRYL1", "USP36", "MCM3AP", "TMEM52B", "RFWD3", "CAPNS1", "UCK2", "OLR1", "ZFPM1", "ZBTB9", "LZTR1"))
+```
+
+```{r}
+ggplot(e_top15_long, aes(x=ID, y=condition, size=ave_exp, color=ave_exp)) + geom_point(alpha = 0.8) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +  labs(x="",y="")+scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint=round(mean(e_top15_long$ave_exp), 1), space = "Lab")
+```
+
+```{r}
+ggplot(e_top15_long, aes(x=ID, y=condition, size=ave_exp, color=ave_exp)) + geom_point(alpha = 0.8) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +  labs(x="",y="")+scale_color_gradient2(low = "lightskyblue1", mid = "turquoise1", high = "royalblue4", midpoint=round(mean(e_top15_long$ave_exp), 1), space = "Lab")
+```
+
