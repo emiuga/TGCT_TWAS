@@ -1,0 +1,242 @@
+---
+title: "Single cell data (for TWAS paper): human_germcells annotations"
+author: "Emilio Ugalde"
+date: "2023-03-17"
+output: html_document
+---
+
+DESCRIPTION: \
+Analysis to test for enrichment of TWAS genes (PERM.PV<0.05) single-cell RNA expression levels on relevant testis development tissues to support TWAS findings. \
+\
+DATA reference: Single-cell roadmap of human gonadal development \
+https://www.nature.com/articles/s41586-022-04918-4#Sec1 \
+\
+Cell types to be included: \
+- germ M+F \
+- Pre-Sertoli M \
+- Sertoli M \
+- Erythrocytes (neg. control) \
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(zellkonverter)
+library(SingleCellExperiment)
+library(scran)
+library(reshape2)
+library(ggplot2)
+```
+
+```{r}
+dir='/home/emiuga/Documents/postdoc_FW/projects/testis/single_cell'
+setwd(paste0(dir, "/Scripts"))
+```
+
+
+# INPUT
+
+## TWAS genes
+```{r}
+dir_twas <- "/home/emiuga/Documents/postdoc_FW/projects/TWAS/Manuscript/Draft/Results_20230203/"
+#file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_165FDR01_91permNOM_51LOCI.master_ANNOT.dat"
+file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_91permNOM_51LOCI.master_ANNOT.dat"
+file_twas_full <- "TWAS_testis_tgct_scca_19839uniqGENES.dat"
+```
+```{r}
+annot <- read.table(paste0(dir_twas, file_twas), header=T, sep="\t" )
+full <- read.table(paste0(dir_twas, file_twas_full), header=T, sep="\t" )
+```
+
+
+## Single-cell gonadal data: Male samples
+```{r, message=F}
+## heavy: will install miniconda by default on first run
+dd <- readH5AD(paste0(dir, "/Data/human_germcells.h5ad"), use_hdf5 = TRUE) 
+## One assay with 28820 genes x 133811 samples
+# dd
+```
+
+```{r}
+# Get expression object
+X <- assay(dd, "X")
+```
+
+
+# Filter data
+
+## Apply QC filters (cell-level)
+```{r}
+# high_mito (TRUE==28277)
+high_mito <- which(dd@colData$high_mito=="False")
+# is_doublet (TRUE==2869)
+is_doublet <- which(dd@colData$is_doublet==F)
+# remove
+filter <- intersect(high_mito, is_doublet)
+str(filter) 
+```
+## Filter celltypes of interest
+```{r}
+table(colData(dd)$celltype)
+```
+
+```{r}
+celltype <- as.vector(colData(dd)$celltype)
+keep <- which(celltype=="PGC" | celltype=="pre_oocyte" | celltype=="pre_spermatogonia" )
+str(keep)
+```
+```{r}
+select <- intersect(keep, filter)
+str(select)
+```
+
+## Cells from celltypes
+```{r}
+celltype_filt <- as.factor(celltype[select])
+table(celltype_filt)
+```
+
+\newpage
+# Analyze data
+
+## Gene expression within cell types (TWAS-top genes)
+
+- Top genes: surpassing permutation test
+```{r}
+twas <- annot[annot$PERM.PV<0.05 & annot$JOINT==T, ]
+nrow(twas)
+```
+- How many are in data set?
+```{r}
+table(twas$ID%in%rownames(X))
+```
+
+## Background genes
+Restrict to genes tested in TWAS #  13970/28820
+```{r}
+table(full$ID%in%rownames(X))
+```
+### Compute per-GENE proportion of cells with NON-ZERO expression
+```{r}
+nze_top <- apply(X[rownames(X)%in%twas$ID, select ], 1, function(x) tapply(x, celltype_filt, function(x) {length(x[x>0])/length(x)*100 } ))
+```
+
+- PROPORTION of cells with non-zero gene expression: distribution across cell-types.
+```{r}
+apply(nze_top, 1, summary)
+```
+```{r}
+# Median
+nze_top_M <- apply(nze_top, 1, median)
+nze_top_M
+```
+
+### Average expression (cell-type scaled)
+```{r}
+mean_sc_top <- apply(X[rownames(X)%in%twas$ID, select ], 1, function(x) tapply(x, celltype_filt, function(x) 
+  {mean(scale(x, center=F), na.rm=T) } ))
+mean_sc_top[is.na(mean_sc_top)] <- 0
+```
+```{r}
+apply(mean_sc_top, 1, summary)
+```
+```{r}
+# Median AVERAGE expression
+mean_SC_top_M <- apply(mean_sc_top, 1, median ) 
+mean_SC_top_M
+```
+
+\newpage
+# Permutation sets
+- Parameters
+```{r}
+seed=15684
+set.seed(seed)
+perm=10000
+s_size=ncol(mean_sc_top)
+n_cat <- length(levels(factor(celltype_filt)))
+s_size
+n_cat
+```
+
+- Background "gene space"
+```{r}
+## Restrict to genes tested in TWAS #  13970/28820
+X_twas <- X[rownames(X)%in%full$ID, select ]
+nrow(X_twas)
+```
+
+## Estimate MEDIAN proportion of cells expressed (at a given cell-type) for a random set of 131 genes
+
+```{r, eval=T, include=T, echo=T}
+# Run permutations
+P_nze_median <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+#P_nze_q25 <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+#P_nze_q75 <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+for(i in 1:perm) {
+  s <- X_twas[ sample(nrow(X_twas), size=s_size),  ]
+  nze <- apply(s, 1, function(x) tapply(x, celltype_filt, function(x) { length(x[x>0])/length(x)*100 } ))
+  P_nze_median[i,] <- rbind(apply(nze, 1, median ) )
+  #P_nze_q25[i,] <- rbind(apply(nze, 1, function(x) { quantile(x, 1/4)} ) )
+  #P_nze_q75[i,] <- rbind(apply(nze, 1, function(x) { quantile(x, 3/4)} ) )
+}
+save(list=c("P_nze_median", "nze_top", "nze_top_M"), file="../Data/perm10K.GERMCELLS_Proportion_expressed_49genes_57JOINTsig_v1.0.Rdat")
+```
+
+```{r, eval=F}
+load(file="../Data/perm10K.GERMCELLS_Proportion_expressed_49genes_57JOINTsig_v1.0.Rdat")
+```
+
+
+## Estimate MEDIAN average expression, SCALED (at a given cell-type) for a random set of genes
+
+```{r, eval=F, include=T, echo=T}
+# Run permutations
+P_ave_sc_median <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+P_ave_sc_q25 <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+P_ave_sc_q75 <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+for(i in 1:perm) {
+  s <- X_twas[ sample(nrow(X_twas), size=s_size),  ]
+  ave <- apply(s, 1, function(x) tapply(x, celltype_filt, function(x) { mean( scale(x, center=F), na.rm=T) } ))
+  ave[is.na(ave)] <- 0
+  P_ave_sc_median[i,] <- rbind(apply(ave, 1, median ) )
+  P_ave_sc_q25[i,] <- rbind(apply(ave, 1, function(x) { quantile(x, 1/4)} ) )
+  P_ave_sc_q75[i,] <- rbind(apply(ave, 1, function(x) { quantile(x, 3/4)} ) )
+}
+save(list=c("P_ave_sc_median", "P_ave_sc_q25", "P_ave_sc_q75", "mean_SC_top_M" ), file="../Data/perm10K.GERMCELLS_ave_scaled_exp_49genes_57JOINTsig_v0.1.Rdat")
+```
+
+```{r, eval=F}
+load(file="../Data/perm10K.GERMCELLS_ave_scaled_exp_49genes_57JOINTsig_v0.1.Rdat")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

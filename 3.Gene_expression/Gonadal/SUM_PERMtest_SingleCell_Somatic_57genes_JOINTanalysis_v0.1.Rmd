@@ -1,0 +1,271 @@
+---
+title: "Single cell data (for TWAS paper): SOMATIC germ cells (males, n=22)"
+author: "Emilio Ugalde"
+date: "2023-03-22"
+output: html_document
+---
+
+DESCRIPTION: \
+Analysis to extract single-cell RNA expression levels on relevant testis development tissues to support TWAS genes **(57 indep. JOINT analysis)**. \
+\
+DATA reference: Single-cell roadmap of human gonadal development \
+https://www.nature.com/articles/s41586-022-04918-4#Sec1 \
+\
+Cell types included: \
+- germ M \
+- Pre-Sertoli M \
+- Sertoli M \
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(zellkonverter)
+library(SingleCellExperiment)
+library(scran)
+library(reshape2)
+library(ggplot2)
+```
+
+```{r}
+dir='/home/emiuga/Documents/postdoc_FW/projects/testis/single_cell'
+setwd(paste0(dir, "/Scripts"))
+```
+
+## Output file
+```{r}
+file_out="../Output/Table.PERMtest_Single_Cell_somatic_TWAS_49genes_57JOINTsig_v1.0.txt"
+```
+
+# INPUT
+
+## TWAS genes
+```{r}
+dir_twas <- "/home/emiuga/Documents/postdoc_FW/projects/TWAS/Manuscript/Draft/Results_20230203/"
+#file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_165FDR01_91permNOM_51LOCI.master_ANNOT.dat"
+file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_91permNOM_51LOCI.master_ANNOT.dat"
+file_twas_full <- "TWAS_testis_tgct_scca_19839uniqGENES.dat"
+```
+```{r}
+twas <- read.table(paste0(dir_twas, file_twas), header=T, sep="\t" )
+full <- read.table(paste0(dir_twas, file_twas_full), header=T, sep="\t" )
+```
+
+## Single-cell gonadal data: Male samples
+```{r, message=F}
+## heavy: will install miniconda by default on first run
+dd <- readH5AD(paste0(dir, "/Data/human_main_male.h5ad"), use_hdf5 = TRUE) 
+# Get expression object
+X <- assay(dd, "X")
+# Filter data
+## Apply QC filters (cell-level)
+# high_mito 
+high_mito <- which(dd@colData$high_mito=="False")
+# is_doublet
+is_doublet <- which(dd@colData$is_doublet==F)
+# remove
+filter <- intersect(high_mito, is_doublet)
+celltype <- as.vector(colData(dd)$lineage)
+keep <- which(celltype=="GermCells" | celltype=="Sertoli" | celltype=="FetalLeydig" )
+select <- intersect(keep, filter)
+## Cells
+celltype_filt <- as.factor(celltype[select])
+```
+
+```{r}
+Ncells <- as.vector(table(celltype_filt))
+names(Ncells) <- names(table(celltype_filt))
+Ncells
+```
+
+## Permutation analysis: see: Scripts/PERMtest_SingleCell_GERMCELLS_165genes_TWASfdr01_v0.1.Rmd \
+```{r}
+load(file="../Data/perm10K.Average_SCALED_expression_JOINTsig_v0.1.Rdat")
+load(file="../Data/perm10K.Proportion_expressed_JOINTsig_v1.0.Rdat")
+```
+
+```{r}
+grep("P_", ls(), value=T)
+```
+
+
+\newpage
+# Sumarize background set
+
+Restrict to genes tested in TWAS 
+```{r}
+table(full$ID%in%rownames(X))
+```
+```{r}
+# background size
+bk_size <- length(which(full$ID%in%rownames(X)))
+bk_size
+```
+```{r}
+# set size
+s_size <- length(which(twas[which(twas$JOINT), ]$ID%in%rownames(X)))
+s_size
+```
+
+
+### per-GENE proportion of cells with NON-ZERO expression
+```{r}
+nze_bk <- apply(X[rownames(X)%in%full$ID, select ], 1, function(x) tapply(x, celltype_filt, function(x) {length(x[x>0])/length(x)*100 } ))
+```
+
+- PROPORTION of cells with non-zero gene expression: distribution across cell-types.
+```{r}
+apply(nze_bk, 1, summary)
+```
+```{r}
+# Median
+nze_bk_M <- apply(nze_bk, 1, median)
+nze_bk_M
+```
+### Average expression (cell-type scaled)
+```{r}
+mean_sc_bk <- apply(X[rownames(X)%in%full$ID, select ], 1, function(x) tapply(x, celltype_filt, function(x) 
+  {mean(scale(x, center=F), na.rm=T) } ))
+mean_sc_bk[is.na(mean_sc_bk)] <- 0
+```
+```{r}
+apply(mean_sc_bk, 1, summary)
+```
+```{r}
+# Median AVERAGE expression
+mean_SC_bk_M <- apply(mean_sc_bk, 1, median ) 
+mean_SC_bk_M
+```
+
+\newpage
+# Permutation analysis summary
+
+
+## MEDIAN proportion of cells expressed (at a given cell-type) for a random set of  genes
+
+- Observed values
+```{r}
+nze_top_M
+```
+
+- Parameters
+```{r}
+cat <- names(nze_top_M)
+perm=nrow(P_nze_median)
+n_cat=ncol(P_nze_median)
+perm
+n_cat
+```
+
+- Calculate perm-Pval: no. of times median expression proportion (e.g. proportion of cells with non-zero expression) in random sets is equal or higher than the observed. (per cell-type)
+```{r}
+# Compute empirical p-value for each cell-type
+med_nze_pval <- rep(NA, n_cat)
+for(i in 1:n_cat) {
+med_nze_pval[i] <- ( sum(P_nze_median[ ,i]>=nze_top_M[i]) + 1  ) / ( perm+1 )
+}
+```
+```{r}
+names(med_nze_pval) <- cat
+med_nze_pval
+```
+
+
+## MEDIAN average expression, SCALED (at a given cell-type) for a random set genes
+
+- Observed values
+```{r}
+mean_SC_top_M <- mean_SC_top_M[levels(celltype_filt)]
+mean_SC_top_M
+```
+
+- Parameters
+```{r}
+cat <- names(mean_SC_top_M)
+perm=nrow(P_ave_sc_median)
+n_cat=ncol(P_ave_sc_median)
+perm
+n_cat
+```
+
+- Calculate perm-Pval: no. of times median average expression in random sets is equal or equal than the observed. (per cell-type)
+
+```{r}
+# Compute empirical p-value for each cell-type
+med_ave_sc_pval <- rep(NA, n_cat)
+for(i in 1:n_cat) {
+med_ave_sc_pval[i] <- ( sum(P_ave_sc_median[ ,i]>=mean_SC_top_M[i]) + 1  ) / ( perm+1 )
+}
+```
+```{r}
+names(med_ave_sc_pval) <- cat
+med_ave_sc_pval
+```
+\newpgae
+# Compile results
+
+```{r}
+# Set order of rows
+cell_table <- c("GermCells", "Sertoli", "FetalLeydig")
+```
+
+- Expression estimates 
+```{r}
+out_est <- cbind(nze_bk_M, mean_SC_bk_M)
+out_est <- cbind(out_est, nze_top_M, mean_SC_top_M )
+out_est <- out_est[cell_table, ]
+out_est
+```
+- Empirical p-values
+```{r}
+out_perm <- cbind(med_nze_pval, med_ave_sc_pval)
+out_perm <- out_perm[cell_table, ]
+out_perm
+```
+
+- Merge
+```{r}
+out <- cbind(out_est, out_perm)
+
+out_df <- data.frame(celltype=rownames(out), n_cells=Ncells[cell_table], Ngenes_BK=bk_size, Ngenes_set=s_size, 
+                     median_nze_BK=out[, "nze_bk_M"], median_nze_set=out[, "nze_top_M"], median_nze.P=out[, "med_nze_pval"],
+                     median_ave_BK=out[, "mean_SC_bk_M"], median_ave_set=out[, "mean_SC_top_M"], median_ave.P=out[, "med_ave_sc_pval"])
+out_df
+```
+
+```{r}
+# Save as table
+file_out
+write.table(out_df, file=file_out, col.names = T, row.names = F, quote=F, sep="\t" )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
