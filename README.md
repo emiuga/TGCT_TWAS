@@ -4,7 +4,7 @@ Ugalde-Morales E. et al. <emilio.ugalde.morales@ki.se>
 
 ## DESCRIPTION
 
-The present repository contains computer code used to perform Trancriptome Wide Association Study (TWAS) on TGCT risk, following FUSION methodology (Gusev et al. 2016)[^1], as well as complementary analysis on external gene expression data sets related to normal testis embryonal development (Human gonadal development)[^2], pre-malignant tissue (i.e GCNIS, germ cell neoplasia in situ)[^3], and TGCT tumor tissue[^4]. 
+The present repository contains computer code used to perform Transcriptome Wide Association Study (TWAS) on TGCT risk, following FUSION methodology (Gusev et al. 2016)[^1], as well as complementary analysis on external gene expression data sets related to normal testis embryonal development (Human gonadal development)[^2], pre-malignant tissue (i.e GCNIS, germ cell neoplasia in situ)[^3], and TGCT tumor tissue[^4]. 
 
 Code regarding data preparation `1.GWAS_imputation`, data analysis on TWAS `2.FUSION_TWAS` and expression data sets `3.Gene_expression`, and generation of tables and figures for publication `Tables_and_figures`, is provided.
 
@@ -17,8 +17,8 @@ Detailed methodology is described in Methods section of the manuscript.
 
 **GWAS summary statistics**
 
-TGCT GWAS meta-analysis summary statistics (Pluta et al. 2021) at availabe at https://www.ncbi.nlm.nih.gov/projects/gap/cgi-bin/study.cgi?study_id=phs001349.v2.p1.
-Summary-GWAS harmonization and imputation was done using the MetaXcan software (https://github.com/hakyimlab/summary-gwas-imputation), please se README and installation/requirements files within ./Scripts/GWAS_imputation folder.
+TGCT GWAS meta-analysis summary statistics (Pluta et al. 2021)[^5] at availabe at https://www.ncbi.nlm.nih.gov/projects/gap/cgi-bin/study.cgi?study_id=phs001349.v2.p1.
+Summary-GWAS harmonization and imputation was done to improve SNP overlap with prediction models (see documentation under the `1.GWAS_imputation` folder).
 
 **TWAS analysis**
 
@@ -58,4 +58,5 @@ wget https://cellgeni.cog.sanger.ac.uk/vento/reproductivecellatlas/gonads/human_
 [^2]:Garcia-Alonso L., et al. Nature. 2022 Jul;607(7919):540-547. doi: 10.1038/s41586-022-04918-4.
 [^3]:Sonne S. B. et al. Cancer Res. 2009 Jun 2. doi: 10.1158/0008-5472.CAN-08-4554.
 [^4]:Shen H., et al. Cell Reports. 2018 Jun 12;23(11):3392-3406. doi: 10.1016/j.celrep.2018.05.039. 
+[^5]:Pluta J., et al. Nat Commun. 2021 Jul 23;12(1):4487. doi: 10.1038/s41467-021-24334-y. 
 
