@@ -1,0 +1,188 @@
+---
+title: "Expression enrichment analysis (TWAS joint independent genes): Tumor expression dataset (TCGA-TGCT)"
+author: "Emilio Ugalde"
+date: "April 19, 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#library(RColorBrewer)
+#library(tidyverse)
+```
+
+```{r}
+dir="~/Documents/postdoc_FW/projects/TWAS/TCGA_tgct/"
+ver="_v0.3"
+```
+
+## Output file
+```{r}
+# File path and prefix
+file_out=paste0("../Data/PermuPV_TGCT-TCGA", ver )
+```
+
+## INPUT
+See: Scripts/Process_TCGAtgct_data_v0.2.Rmd \
+```{r}
+file="Data/norm_mat_150.aggregated_20230417.txt"
+```
+
+```{r}
+# library(data.table)
+# fread(paste0(dir, file)) -> eset
+read.delim(paste0(dir, file)) -> eset
+# Remove ensembl.id column
+eset <- eset[,-1]
+```
+
+- TWAS results
+```{r}
+dir_twas <- "/home/emiuga/Documents/postdoc_FW/projects/TWAS/Manuscript/Draft/Results_20230203/"
+file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_91permNOM_51LOCI.master_ANNOT.dat"
+file_twas_full <- "TWAS_testis_tgct_scca_19839uniqGENES.dat"
+twas <- read.table(paste0(dir_twas, file_twas), header=T, sep="\t" )
+full <- read.table(paste0(dir_twas, file_twas_full), header=T, sep="\t" )
+```
+
+## Overlap with TWAS
+```{r}
+table(twas$ID%in%eset$ID)
+table(full$ID%in%eset$ID)
+```
+## Distribution
+```{r}
+summary(eset[,-1])
+```
+
+## Format data
+
+- Filter out non-informative genes
+```{r}
+# Remove entries with no gene ID
+eset_f <- eset[is.na(eset$ID)==F, ]
+nrow(eset_f)
+# No. of unique IDs
+length(unique(eset_f$ID))
+```
+- Remove duplicated IDs (all entries)
+```{r}
+dup <- unique(eset[which(duplicated(eset$ID)), ]$ID)
+str(dup)
+```
+```{r}
+eset_f <- eset_f[!eset_f$ID%in%dup, ]
+nrow(eset_f)
+```
+
+## Subet on ALL genes included in TWAS analysis
+```{r}
+eset_T <- eset_f[eset_f$ID%in%full$ID, ]
+nrow(eset_T)
+```
+- Distribution
+```{r}
+apply(eset_T[,-1], 2, summary)
+```
+
+## TWAS subset (JOINT independent genes)
+```{r}
+# Jointly independent (57 genes)
+tlist_top <- twas[which(twas$JOINT), ]$ID
+str(tlist_top)
+```
+```{r}
+# Scaled data
+e_twas_top <- eset_T[eset_T$ID%in%tlist_top,] 
+nrow(e_twas_top)
+```
+- Genes not found
+```{r}
+twas[which(twas$JOINT), ][!twas[which(twas$JOINT), ]$ID%in%eset$ID, c("ID", "PANEL", "geneType", "ENSEMBL")]
+```
+
+
+## Calculate observed values for the TWAS gene set
+```{r}
+# Scaled Median AVERAGE expression
+med_top_M <- apply(e_twas_top[,-1], 2, median) #median(e_twas_top$norm_exp)
+med_top_M
+```
+
+## Background set (genes included in TWAS)
+
+- Median expression
+```{r}
+median_e_bk <-  apply(eset_T[,-1], 2, median) 
+median_e_bk
+```
+- Median expression in FULL dataset
+```{r}
+#median(as.numeric(scale(eset_S$norm_exp, center=F) ))
+apply(eset_f[,-1], 2, median)
+```
+
+\newpage
+# Permutation tests
+- Parameters
+```{r}
+seed=15684
+set.seed(seed)
+perm=10000
+```
+
+```{r}
+e_twas_bk <- eset_T
+nrow(e_twas_bk)
+```
+
+## Estimate MEDIAN average expression by random sampling
+```{r}
+# Data set SIZE
+s_size=nrow(e_twas_top)
+n_cat <- 2
+s_size
+```
+
+```{r}
+# Run permutations
+P_ave_median <- matrix(rep(NA, n_cat*perm), ncol=n_cat)
+X_twas <- e_twas_bk[, -1]
+for(i in 1:perm) {
+  s <- X_twas[ sample(nrow(X_twas), size=s_size),  ]
+  P_ave_median[i,] <- apply(s, 2, median)
+}
+apply(P_ave_median, 2, summary)
+```
+
+- Calculate perm-Pval: no. of times median average expression in random sets is equal or equal than the observed. (per cell-type)
+```{r}
+# Compute empirical p-value for each cell-type
+med_ave_pval <- rep(NA, n_cat)
+for(i in 1:n_cat) {
+med_ave_pval[i] <- ( sum(P_ave_median[ ,i]>=med_top_M[i]) + 1  ) / ( perm+1 )
+}
+```
+```{r}
+names(med_ave_pval) <- names(e_twas_bk[, -1])
+med_ave_pval
+```
+
+## Compile results
+```{r}
+out <- data.frame(Condition=c("Seminoma", "Non-seminoma"),
+                  Background=c(nrow(eset_T), " "), Leading=c(nrow(e_twas_top), " "), # Overlapping set (no. of genes)
+                  Background=median_e_bk, Leading=med_top_M, # Median average expression
+                  PERM.PV=med_ave_pval)
+out
+```
+
+## Save 
+```{r}
+file=paste0(file_out, ".dat")
+write.table(out, file=file, col.names=T, row.names=F, quote=F, sep="\t" )
+file
+```
+
+
+
