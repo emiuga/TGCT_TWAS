@@ -1,0 +1,364 @@
+---
+title: "Miami plot for TGCT TWAS results (supplementary)"
+author: "Emilio Ugalde"
+date: "June 26, 2023"
+output:
+  html_document: default
+  pdf_document: default
+  fontsize: 9pt
+---
+
+
+**OVERVIEW**: Summary of TWAS analysis using TECAC sumstats and five gene expression prediction panels: testis tissue (GTEx v_8), TGCT tumor tissue (TCGA), and three main cross-tissue features (sparse cannonical correlation analysis, sCCA, from 22 GTEx normal tissues). Testis was considered the main target tissue. Additional prediction models were included if available in TGCT panel, or if not, from the sCCA feature with best gene-level predictive performance.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(data.table)
+library(ggmanh)
+library(patchwork)
+library(ggrepel)
+```
+
+
+```{r}
+# Source directory
+path_machine="/run/user/1000/gvfs/sftp:host=vector.meb.ki.se"
+wd="/nfs/GENETEC/TWAS/"
+wd=paste0(path_machine, wd)
+```
+
+```{r}
+# version
+ver="_v1.1"
+# Output dir
+dir_out=paste0(wd, "Manuscript/Figures/")
+file_out="Suppl.Figure_2.Miami_ggplot"
+```
+
+# Input
+
+## TWAS results
+```{r}
+# full TWAS output
+dir=paste0(wd, "Output/imputed_TECAC/summary_perm100K/")
+all <- read.table(paste0(dir, 'TWAS_testis_tgct_scca_19839uniqGENES.dat'), header=T, sep="\t" )
+```
+
+## GWAS susmtats
+```{r}
+# For sumstats
+# See scripts: 'Programs/2.1.Create_GWAS_sumstats_hg19_forPlotting_v0.sh'
+dir_ss=paste0(wd, "Data/tmp/sumstats_imputed/")
+file_ss="TECAC_META_8site_validation_LDREF_hg19_aligned.txt"
+```
+```{r}
+ss <- fread(paste0(dir_ss, file_ss), header = T)
+nrow(ss)
+```
+
+# Format data
+```{r}
+#' Complete TWAS results
+dir <- paste0(wd, "Output/imputed_TECAC/summary_perm100K/")
+all <- read.table(paste0(dir, 'TWAS_testis_tgct_scca_19839uniqGENES.dat'), header=T, sep="\t" )
+all <- all[order(all$CHR, all$P0), ]
+all$num <- 1:nrow(all)
+#' FIXME: does this even make sense?!
+all$POS <- (all$P0 + all$P1) / 2
+all$POS <- all$P0
+#' Check: unique identifier?
+stopifnot( !any(duplicated(all$ID)) )
+#' Sort
+all <- all[order(all$CHR, all$POS, all$ID), ]
+
+#' Read the table of top results
+dir   <- paste0(wd, "Manuscript/Tables/annot_100KpermNOM_only/")
+annot <- read.table(paste0(dir, "TWAS_testis_tgct_scca_19839uniqGENES_91permNOM_51LOCI.master_ANNOT.dat"),
+                    header=T, sep="\t" )
+#' Check: unique identifier, matching TWAS results?
+stopifnot( !any(duplicated(annot$ID)) )
+stopifnot( all(annot$ID %in% all$ID) )
+#' Light processing: merge top list to full data
+annot <- annot[order(annot$CHR, annot$P0), ] 
+annot$Label <- seq(1:nrow(annot))
+#' Extract some useful gene lists for labelling down the road
+leading_genes <- annot[which(annot$JOINT),]$ID
+perm_genes <- annot[annot$PERM.nom=="yes", ]$ID
+noGWAS_genes <- annot[annot$GWAS_overlap=="No", ]$ID
+top_genes <- annot$ID
+
+#' Add labels to TWAS
+all$Label_lead <- ifelse(all$ID %in% leading_genes, all$ID, NA)
+all$Label_perm <- ifelse(all$ID %in% perm_genes, all$ID, NA)
+all$Label_noGW <- ifelse(all$ID %in% noGWAS_genes, all$ID, NA)
+all$Label_top  <- ifelse(all$ID %in% top_genes, all$ID, NA)
+#' Make them also flags
+all$is_lead <- !is.na(all$Label_lead)
+all$is_perm <- !is.na(all$Label_perm)
+all$is_noGW <- !is.na(all$Label_noGW)
+all$is_top   <- !is.na(all$Label_top)
+#' Mix label
+all <-  merge(all, annot[, c("ID", "Label")], by="ID", all.x=TRUE)
+all$Label_mixed <- all$Label
+all$Label_mixed[all$is_noGW] <- all$ID[all$is_noGW]
+```
+
+
+```{r}
+# GWAS summary statitics
+dir_ss  <- paste0(wd, "Data/tmp/sumstats_imputed/")
+file_ss <- "TECAC_META_8site_validation_LDREF_hg19_aligned.txt"
+ss      <- fread(paste0(dir_ss, file_ss), header = TRUE)
+#' Check: do we have any duplicate SNPs? Yes, we do
+# stopifnot( !any(duplicated(ss$SNP)))
+#' Drop the duplicated SNPs, why don't we?
+dup_snps <- ss$SNP[duplicated(ss$SNP)]
+#' Does not farking matter which one we drop, they all losers
+subset(ss, SNP %in% dup_snps)
+ss <- ss[!duplicated(ss$SNP),]
+stopifnot( !any(duplicated(ss$SNP)))
+#' Sort
+ss <- ss[order(ss$CHR, ss$POS, ss$SNP), ]
+#' Light formatting
+ss$CHR <- as.numeric(ss$CHR)
+ss$POS <- as.numeric(ss$POS)
+```
+
+#' Setup the data for ggmanh
+#' =========================
+
+#' The main function is ggmanh::manhattan_plot, which has a method for 
+#' data frames, so we can feed the data as-is to generate plots.
+
+#' However, it is often more convenient to run the explicit pre-processing 
+#' routine ggmanh::manhattan_data_preprocess first, and feed the resulting 
+#' data structure into ggmanh::manhattan_plot afterwards. That allows us on 
+#' the one hand to separate specification of data columns for chromosome, 
+#' position etc. from building the actual plot, which is more readable. Here,
+#' it has the additional benefit of allowing us to adjust the relative widths
+#' of the chromosomes to be the same for both plots, so that top- and bottom 
+#' plot align properly
+
+```{r}
+#' Data for the top (TWAS) plot
+chr_colors <- rep(c(gray(0.3), gray(0.8)), 11)
+chr_colors <- rep(c("brown", "black"), 11)
+#' Using standard reference levels for GWAS (5E-8, 1E-5) - ?
+dd_top <- manhattan_data_preprocess(all, pval.colname = "TWAS.P", 
+			   	chr.colname = "CHR", pos.colname = "POS", highlight.colname = NULL, 
+				  signif.col = NULL, highlight.col = NULL, preserve.position = TRUE, 
+				  thin = TRUE, thin.n = 1000, chr.col = chr_colors, signif=c(8.5e-05))
+#' This is what the unadjusted plot looks like
+#' NOTE THE SCALE BREAK AT 8: implicit zoom / more space for crowded part
+manhattan_plot(dd_top, rescale = TRUE, rescale.ratio.threshold = 4,
+							 signif.rel.pos = 0.6)
+
+```
+
+```{r}
+#' Data for the bottom (GWAS) plot
+dd_btm <- manhattan_data_preprocess(ss, pval.colname = "P", 
+					chr.colname = "CHR", pos.colname = "POS", highlight.colname = NULL, 
+					signif.col = NULL, highlight.col = NULL, preserve.position = TRUE, 
+					thin = TRUE, thin.n = 1000, chr.col = chr_colors)
+#' This is what the unadjusted plot looks like; note that the width of the 
+#' chromosomes only corresponds roughly to the top plot
+manhattan_plot(dd_btm, rescale = TRUE, rescale.ratio.threshold = 4, 
+							 signif.rel.pos = 0.6)
+#' ... and this is what it looks like flipped
+manhattan_plot(dd_btm, rescale = TRUE, rescale.ratio.threshold = 4, 
+							 signif.rel.pos = 0.6) + coord_cartesian(ylim = c(160, 0))
+
+```
+
+```{r}
+#' Helper function
+#' ===============
+
+#' Set the relative width of chromosomes in a pre-processed data set
+#' 
+#' @param x A pre-processed data set of class `MPdata`
+#' @param chr_min A named vector of the first base pair position on each
+#'                chromosome, with chromosome id as name
+#' @param chr_max A named vector of the last base pair position
+#'                  
+#' @result A modified object of class `MPdata`, with an extra list element `x_coord`
+set_chrwidth <- function(x, chr_min, chr_max)
+{
+	## NEED TO SORT BY CHR/POS: thinning changes order
+	x$data <- x$data[order(x$data[[x$chr.colname]], x$data[[x$true.pos.colname]]), ]
+	## FIXME: check levels are compatible
+	chr.ord   <- levels(x$data[[x$chr.colname]])
+	nchr      <- length(chr.ord)
+	## Relative width of chromosomes
+	chr_width <- chr_max - chr_min
+	chr_width <- chr_width / sum(chr_width)
+	## Based on the relative widths, define start, center and end for each 
+	## chromosomes, with a small gap in between
+	lg <- max(chr_width) / 10
+	start_pos <- c(0, cumsum(chr_width)[-nchr]) + ((1:nchr - 1) * lg)
+	names(start_pos) <- names(chr_width)  ## CHECK!!!
+	end_pos     <- start_pos + chr_width
+	center_pos  <- (start_pos + end_pos)/2
+	## This is the function that does the job
+	posfun <- function(pos, chr) {
+		## FIXME: check that no unknown chromosomes are passed in,
+		## that there is still data left after dropping unknown chromosomes
+		rel_pos <- chr_width[chr] * (pos - chr_min[chr])/chr_max[chr]
+		rel_pos + start_pos[chr]
+	}
+	## Apply this function to calculate the coordinates for the current data
+	x$data$new_pos <- posfun(x$data[[x$true.pos.colname]], as.character( x$data[[x$chr.colname]] ))
+  ## Update the chromosome coordinates in the data object
+	x$start_pos  <- start_pos
+	x$center_pos <- center_pos
+	x$end_pos    <- end_pos
+	## Add the function defined above - this should be handy downstream
+	x$x_coord <- posfun
+	## Return
+	x
+}
+
+#' Harmonize two pre-processed data sets
+#' 
+#' @param x, y A pre-processed data set of class `MPdata`
+#'                  
+#' @result A list of two objects of class `MPdata`
+harmonize_preprocessed_data <- function(x, y)
+{
+	get_min <- function(z) tapply(z$data[[z$true.pos.colname]], z$data[[z$chr.colname]], min)
+	get_max <- function(z) tapply(z$data[[z$true.pos.colname]], z$data[[z$chr.colname]], max)
+	
+	x_min <-   get_min(x)
+	y_min <-   get_min(y)
+	stopifnot(all.equal(names(x_min), names(y_min)))
+	chr_start <- pmin(x_min, y_min)
+	
+	x_max <- get_max(x)
+	y_max <- get_max(y)
+	stopifnot(all.equal(names(x_max), names(y_max)))
+	chr_end <- pmin(x_max, y_max)
+	
+	list( x = set_chrwidth(x, chr_start, chr_end), 
+				y = set_chrwidth(y, chr_start, chr_end))
+}
+
+#' Flip a Manhattan plot
+#' 
+#' Reverses the y-scale of a Manhattan plot and removes all x-axis labels
+#' 
+#' @param x A Manhattan plot as generated by ggmanh::manhattan_plot
+#' 
+#' @result Another Manhattan plot (a ggplot2-object)
+flip_manh <- function(x)
+{
+	ylab <- ggplot2::ggplot_build(x)$layout$panel_params[[1]]$y$get_labels()
+	ymax <- max(as.numeric(ylab))
+	xpos <- ggplot_build(pl_btm)$layout$panel_params[[1]]$x$get_breaks()
+	x + coord_cartesian( ylim = c(ymax, 0)) + 
+		scale_x_continuous(name = "", breaks = xpos,	position = "top", expand = c(0.01, 0.01)) + 
+		theme(axis.text.x=element_blank(), axis.title.x = element_blank())
+}
+	
+```
+
+
+```{r}
+#' Harmonize the chromosome widths
+#' ===============================
+dd <- harmonize_preprocessed_data(dd_top, dd_btm)
+manhattan_plot(dd$x) / (manhattan_plot(dd$y) + coord_cartesian(ylim = c(160, 0)))
+
+#' Create bottom plot
+pl_btm <- manhattan_plot(dd$y, rescale = TRUE, rescale.ratio.threshold = 4,
+                         signif.rel.pos = 0.7) 
+pl_btm <- flip_manh(pl_btm)
+
+
+
+#' Nice trick: the harmonization (actually, setting the chromosomes width) 
+#' exposes a function we can use to calculate the x-coordinate as a function of 
+#' BP-position and chromosome
+#' We can use this to add *anything* to the plot
+annot$POS  <- (annot$P0 + annot$P1)/ 2
+annot$x    <- dd$x$x_coord(annot$POS, annot$CHR)
+```
+
+#' Main plot
+#' =================
+```{r}
+dot_size=2.0
+```
+```{r}
+#' color code for 3 highligts
+library("RColorBrewer")
+h_color=brewer.pal( 3 , "Dark2" )
+```
+
+```{r}
+# legend
+plot(1,1)
+legend( "topleft" , legend=c("A", "B", "C"),  pch=c(19, 19, 19 ),  col=h_color, border = "black", cex=2, bty="n" )
+```
+
+```{r}
+#' TWAS plot
+pl_top <- manhattan_plot(dd$x, rescale = TRUE, rescale.ratio.threshold = 4, signif.rel.pos = 0.7)
+```
+
+## Higlight genes
+
+```{r}
+## Permutation-significant hits
+# ALSO novel == 39 genes
+pl_top_S2 <- pl_top + geom_point(data = subset(annot, PERM.nom=="yes" & GWAS_overlap=="No"), 
+               aes(x = x, y = -log10(TWAS.P)), shape = 23, fill=h_color[2], color="black", size = dot_size, inherit.aes = FALSE)
+# THE remaining perm.hits: 52 genes in GWAS loci
+pl_top_S2 <- pl_top_S2 + geom_point(data = subset(annot, PERM.nom=="yes" & GWAS_overlap=="Yes"), 
+               aes(x = x, y = -log10(TWAS.P)), shape = 23, fill=h_color[3], color="black", size = dot_size, inherit.aes = FALSE)
+```
+```{r}
+## Add labels to PERMUTATION-sig. genes (using LABELS)
+pl_top_S2 <- pl_top_S2 + geom_label_repel(data = annot, 
+                  aes(x = x, y = -log10(TWAS.P), label = Label), label.padding=0.1, label.r=0.2, size = 3.5, colour="black", 
+                  min.segment.length=0.2, label.size=0.05,segment.size=0.12, max.overlaps=100,inherit.aes = FALSE)
+```
+```{r}
+pl_top_S2
+```
+
+
+# Save plot
+
+```{r, eval=T}
+pl_supl_opt2 <- pl_top_S2 / pl_btm
+
+png(file=paste0(dir_out, file_out, ver, ".png"), width=16, height=11, units="in", res=600 )
+pl_supl_opt2
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

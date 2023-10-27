@@ -1,0 +1,188 @@
+---
+title: "Manuscript MAIN table: 57 candidate genes out of 91 TOP_perm100K_NOM"
+author: "Emilio Ugalde"
+date: "2023-06-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**DESCRIPTION**: \
+Generate MAIN table including TWAS robust associations found as conditionally independent in the joint-conditional analysis: which is, 57 genes at 51 loci.
+
+
+```{r}
+# version sufix
+ver = "v0.5.dat"
+
+# Setup
+twas="TWAS_testis_tgct_scca_19839uniqGENES"
+
+## Source directory
+path_machine="/run/user/1000/gvfs/sftp:host=vector.meb.ki.se"
+wd="/nfs/GENETEC/TWAS/"
+wd=paste0(path_machine, wd)
+```
+
+## Input
+NOTE: master file created using scripts: ./Manuscript/Scripts_results/1.0.Generate_TWAS_annotated_master_table_100KpermNOM_v0.5.Rmd \
+
+```{r}
+dir=paste0(wd, "Manuscript/Tables/annot_100KpermNOM_only/")
+imp="TWAS_testis_tgct_scca_19839uniqGENES_91permNOM_51LOCI.master_ANNOT.dat"
+```
+
+## Output
+```{r}
+dir_out=paste0(wd, "Manuscript/Tables/Formatted/")
+# File names 
+name_out=c("Main_Table.Perm100K_NOM_Candidate_genes")
+```
+
+```{r}
+# columns to retrieve
+#col_get <- c("Locus","CHR","ID","geneType","TISSUE","JOINT.Z","JOINT.P","TGCT-GWAS" )
+col_get <- c("LOCUS.index","Cytoband_hg38","ID","Position_hg38","geneType","TISSUE","JOINT.Z","JOINT.P","TGCT-GWAS" )
+
+```
+```{r}
+# Edit naming of variables
+col_edit <- c("Locus index","Cytoband","Gene symbol","Position (hg38)","Gene type","Tissue","Joint Z-score","Joint P-value","Overlap GWAS locus")
+```
+
+
+## Read in data
+```{r}
+top <- read.table(paste0(dir, imp), header=T, sep="\t")
+nrow(top)
+```
+## Format data
+
+```{r}
+# Re-name Tissues
+top$TISSUE <- ifelse(top$PANEL=="GTExv8.ALL.Testis", "Testis", 
+                     ifelse(top$PANEL=="TCGA-TGCT.TUMOR", "TGCT", "Cross-tissue"))
+# Position (hg38)
+top$Position_hg38 <- paste0("chr",top$CHR, ": ", paste0(top$P0_hg38, "-",top$P1_hg38))
+# Position (hg19)
+top$Position_hg19 <- paste0("chr",top$CHR, ": ", paste0(top$P0_hg19, "-",top$P1_hg19))
+# Annotate TGCT-GWAS overlap (i.e. add "*" if gene same as prev. adjudicated-implicated)
+top$`TGCT-GWAS` <- ifelse(top$GWAS_overlap=="Yes", "Y", "N")
+top$`TGCT-GWAS` <- ifelse(top$GWAS_overlap=="Yes" & top$gwas_gene==T , "Y*", top$`TGCT-GWAS`)
+table(top$`TGCT-GWAS`)
+# Clean geneType names
+top$geneType_bk <- top$geneType
+top$geneType <- replace(top$geneType, top$geneType=="protein_coding", "PC")
+top$geneType <- replace(top$geneType, top$geneType=="antisense", "ant")
+top$geneType <- replace(top$geneType, top$geneType=="lincRNA", "lnc")
+top$geneType <- replace(top$geneType, top$geneType=="processed_pseudogene", "pps")
+top$geneType <- replace(top$geneType, top$geneType=="processed_transcript", "ptr")
+top$geneType <- replace(top$geneType, top$geneType=="TEC", "tec")
+#top$geneType <- gsub("_", " ", top$geneType)
+```
+```{r, eval=F}
+top[, col_get]
+```
+
+
+
+```{r}
+# Round decimals
+top$TWAS.Z <- round(top$TWAS.Z, 4)
+top$JOINT.Z <- round(top$JOINT.Z, 4)
+top$JOINT.P <- formatC(top$JOINT.P, format="e", digits = 2)
+```
+
+
+```{r}
+# Annotate if prev. implicated-adjudicated
+top$Adjud_impl.status <- ifelse(top$gwas_gene==T, "*", "")
+top$Adjud_impl.status <- replace(top$Adjud_impl.status, is.na(top$Adjud_impl.status)==T, "")
+table(top$Adjud_impl.status)
+```
+
+
+# Filter data
+```{r}
+out <- top[top$PERM.nom=="yes", ]
+nrow(out)
+# Loci
+length(unique(out$LOCUS))
+```
+- Tabulate by protein-coding type
+```{r}
+table(out$geneType=="protein_coding")
+```
+
+## Filter Leading genes
+```{r}
+table(out$JOINT_status)
+```
+```{r}
+# out_lead <- out[out$JOINT_status=="single" | out$JOINT_status=="joint_best", ]
+out_lead <- out[out$JOINT_status!="conditional" & out$JOINT_status!="correlated", ]
+nrow(out_lead)
+# Loci
+length(unique(out_lead$LOCUS))
+```
+- Tabulate by GWAS-locus overlap
+```{r}
+table(out_lead$GWAS_overlap)
+table(out_lead$GWAS_overlap_locus)
+```
+
+- Number of unique GWAS loci
+```{r}
+# Known loci
+length(unique(out_lead[out_lead$GWAS_overlap=="Yes",]$LOCUS))
+# Novel loci
+length(unique(out_lead[out_lead$GWAS_overlap=="No",]$LOCUS))
+```
+
+- Tabulate by protein-coding type
+```{r}
+table(out_lead$geneType=="protein_coding")
+```
+- Tabulate by protein-coding type: known/novel loci
+```{r}
+table(out_lead$geneType=="protein_coding", out_lead$GWAS_overlap)
+```
+
+- Tabulate if TWAS gene is same as GWAS.implicated-adjudicated
+```{r}
+table(out_lead$Adjud_impl.status)
+```
+
+# Produce main table
+
+```{r}
+out_table <- out_lead[ order(out_lead$CHR, out_lead$P0_hg38), col_get]
+```
+
+```{r}
+file=paste0(name_out, "_", nrow(out_lead),"genes_", ver)
+#cat(append(head_out, "\n"), sep = "\t", file=paste0(dir_out, file), append = T )
+cat(append(col_edit, "\n"), sep = "\t", file=paste0(dir_out, file), append = T )
+
+write.table(out_table, file=paste0(dir_out, file), col.names = F, row.names = F, quote = F, sep="\t", append = T)
+
+print(file)
+```
+```{r}
+# Print table
+out_table
+```
+
+
+```{r, eval=F}
+# To create PDF table with scientific notation
+library(formatdown)
+top$JOINT.P <- format_power(as.numeric(top$JOINT.P), format="sci")
+```
+```{r, eval=F}
+knitr::kable(out_lead[ order(out_lead$Locus), col_get], col.names = col_edit)
+```
+
+

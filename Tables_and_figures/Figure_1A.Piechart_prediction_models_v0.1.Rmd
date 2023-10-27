@@ -1,0 +1,221 @@
+---
+title: "Figure 1A. Pie chart of prediction models from panels"
+author: "Emilio Ugalde"
+date: "April 20, 2023"
+output: html_document
+---
+
+For R solution, see: https://syoxscorner.com/how-to/r/creating-pie-charts-with-r-using-ggplot2/
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2) 
+library(scales)
+```
+
+**OVERVIEW**: Summary of TWAS analysis using TECAC sumstats and five gene expression prediction panels: testis tissue (GTEx v_8), TGCT tumor tissue (TCGA), and three main cross-tissue features (sparse cannonical correlation analysis, sCCA, from 22 GTEx normal tissues). Testis was considered the main target tissue. Additional prediction models were included if available in TGCT panel, or if not, from the sCCA feature with best gene-level predictive performance.
+
+
+```{r, echo=T}
+# Source directory
+path_machine="/run/user/1000/gvfs/sftp:host=vector.meb.ki.se"
+wd="/nfs/GENETEC/TWAS/"
+wd=paste0(path_machine, wd)
+```
+```{r}
+# version
+ver="v0.1"
+```
+
+
+# Set output
+```{r, echo=T}
+# Output dir
+dir_out=paste0(wd, "Manuscript/Figures/")
+file_prefix="Figure_1A.Plot_PANEL_pred_models_"
+```
+
+# Input
+See scripts: Programs/2.Summarize_TWAS_v4_output_v2.1.R \
+
+## TWAS output files
+```{r}
+# Formatted gene names and hg19 coordinates
+dir=paste0(wd, "Output/imputed_TECAC/summary_perm100K/")
+all <- read.table(file=, paste0(dir, 'TWAS_testis_tgct_scca_19839uniqGENES.dat'), header=T, sep="\t")
+```
+
+## Tabulate prediction models
+
+- Mutually exclusive models
+```{r}
+# Re-name panels
+all$PANEL_x <- replace(all$PANEL, all$PANEL=="sCCA1" | all$PANEL=="sCCA2" | all$PANEL=="sCCA3", "Cross-tissue")
+all$PANEL_x[all$PANEL_x=="GTExv8.ALL.Testis" ] <- "Testis"
+all$PANEL_x[all$PANEL_x=="TCGA-TGCT.TUMOR" ] <- "TGCT"
+table(all$PANEL_x)
+```
+
+```{r}
+tab_models <- merge(as.data.frame(table(all[all$PANEL_x=="Testis", ]$MODEL)), as.data.frame(table(all[all$PANEL_x=="TGCT", ]$MODEL)), by="Var1", all=T)
+tab_models <- merge(tab_models, as.data.frame(table(all[all$PANEL_x=="Cross-tissue", ]$MODEL)), by="Var1", all=T)
+names(tab_models) <- c("Model", "Testis", "TGCT", "Cross-tissue" )
+tab_models[is.na(tab_models)] <- "-"
+tab_models
+```
+
+```{r}
+knitr::kable(tab_models, align='c')
+```
+```{r}
+knitr::kable(tab_models, format = "latex", align='c')
+```
+
+```{r}
+write.table(tab_models, file=paste0(dir_out, "Fig1A_MODELS_Tabulated.dat"), row.names=F, col.names=T, quote=F, sep="\t")
+```
+
+```{r, eval=F}
+library(knitr)
+#library(dplyr)
+library(kableExtra)
+kable(tab_models, "html") %>% save_kable(file=paste0(dir_out, "VenDiagram_MODELS_Tabulated.pdf"))
+pdf(file=paste0(dir_out, "VenDiagram_MODELS_Tabulated.pdf"), width = 4, height = 3)
+knitr::kable(tab_models)
+dev.off()
+```
+
+
+## Pie chart
+```{r}
+t_order=c("Testis", "Cross-tissue", "TGCT")
+tb <- as.data.frame(table(all$PANEL_x) )
+tb$Var1 <- factor(as.character(tb$Var1), levels = t_order)
+names(tb) <- c("Tissue", "n")
+tb$prop <- paste0(round(prop.table(tb[,2])*100, 1), "%")
+#rownames(tb) <- tb$Tissue
+#tb <- tb[t_order, ]
+```
+
+```{r, eval=F}
+ggplot(tb, aes(x="", y=n, fill=Tissue)) +
+  geom_bar(width = 1, stat = "identity", color="white") +
+  coord_polar(theta="y", start=0) +
+  theme_void() +
+  geom_text(aes(
+    y = c(3617.5, 13331.0, 19633.0), # n / 2 + c(0, cumsum(n)[-length(n)]
+    label=prop), size=3)
+```
+
+```{r}
+# Add label (%) positions
+library(dplyr)
+num.data <- tb %>% 
+  arrange(desc(Tissue)) %>%
+  mutate(lab.ypos = cumsum(n) - 0.5*n)
+num.data
+```
+
+# Plot
+```{r}
+ggplot(num.data, aes(x="", y=n, fill=Tissue)) +
+  geom_bar(width = 1, stat = "identity", color="white") +
+  coord_polar(theta="y", start=0) +
+    geom_text(aes(
+    y = lab.ypos, # n / 2 + c(0, cumsum(n)[-length(n)]
+    label=prop), size=5, color="black") +
+  theme_void() 
+```
+
+# Donut plot
+```{r}
+ggplot(num.data, aes(x=2, y=n, fill=Tissue)) +
+  geom_bar(width = 1, stat = "identity", color="white") +
+  coord_polar(theta="y", start=0) +
+    geom_text(aes(
+    y = lab.ypos, # n / 2 + c(0, cumsum(n)[-length(n)]
+    label=prop), size=5, color="black") +
+  theme_void() + theme(legend.title = element_text(face="bold"), legend.text = element_text(size=13) ) +xlim(0.5,2.5) 
+```
+
+## Remove percentage on TGCT
+```{r}
+num.data_2 <- num.data
+num.data_2[num.data_2$Tissue=="TGCT",3] <- " "
+```
+
+```{r}
+pd1 <- ggplot(num.data_2, aes(x=2, y=n, fill=Tissue)) +
+  geom_bar(width = 1, stat = "identity", color="white") +
+  coord_polar(theta="y", start=0) +
+    geom_text(aes(
+    y = lab.ypos, # n / 2 + c(0, cumsum(n)[-length(n)]
+    label=prop), size=6, color="black") +
+  theme_void() + theme(legend.title = element_blank(), legend.text = element_text(size=20) ) +xlim(0.5,2.5)  
+pd1
+```
+```{r}
+# legend at the bottom
+pd1_b <- ggplot(num.data_2, aes(x=2, y=n, fill=Tissue)) +
+  geom_bar(width = 1, stat = "identity", color="white") +
+  coord_polar(theta="y", start=0) +
+    geom_text(aes(
+    y = lab.ypos, # n / 2 + c(0, cumsum(n)[-length(n)]
+    label=prop), size=6, color="black") +
+  theme_void() + theme(legend.title = element_blank(), legend.text = element_text(size=16), legend.position = "bottom" ) +xlim(0.5,2.5)  
+pd1_b
+```
+```{r}
+# legend at the top
+pd1_u <- ggplot(num.data_2, aes(x=2, y=n, fill=Tissue)) +
+  geom_bar(width = 1, stat = "identity", color="white") +
+  coord_polar(theta="y", start=0) +
+    geom_text(aes(
+    y = lab.ypos, # n / 2 + c(0, cumsum(n)[-length(n)]
+    label=prop), size=5, color="black") +
+  theme_void() + theme(legend.title = element_blank(), legend.text = element_text(size=14), legend.position = "top" ) +xlim(0.5,2.5)  
+pd1_u
+```
+
+# Save plots
+```{r}
+file_out=paste0(file_prefix, ver, ".pdf")
+file_out
+pdf(file=paste0(dir_out, file_out), width=6, height=5)
+pd1
+dev.off()
+```
+
+```{r}
+file_out=paste0(file_prefix, "BottomLegend_" , ver, ".pdf")
+file_out
+pdf(file=paste0(dir_out, file_out), width=4, height=5)
+pd1_b
+dev.off()
+```
+```{r}
+file_out=paste0(file_prefix, "TopLegend_" , ver, ".pdf")
+file_out
+pdf(file=paste0(dir_out, file_out), width=4, height=5 )
+pd1_u
+dev.off()
+```
+
+```{r, eval=F}
+# PNG format
+file_out=paste0(file_prefix , ver, ".png")
+file_out
+png(file=paste0(dir_out, file_out), width=5, height=5, units = "in", res=300 )
+pd1
+dev.off()
+```
+
+```{r, eval=F}
+file_out=paste0(file_prefix, "TopLegend_" , ver, ".png")
+file_out
+png(file=paste0(dir_out, file_out), width=6, height=7, units = "in", res=300 )
+pd1_u
+dev.off()
+```
+

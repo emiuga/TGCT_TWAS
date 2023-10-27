@@ -1,0 +1,233 @@
+---
+title: "Model predictive performance"
+author: "Emilio Ugalde"
+date: "2022-10-24"
+output: html_document
+---
+
+Description (v0.3): xlimits set between 0 to 1 and using same type of bar-bin size (breaks=seq(0,1,0.04)). \
+
+```{r setup, include=FALSE}
+library(plyr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+# Source directory
+path_machine="/run/user/1000/gvfs/sftp:host=vector.meb.ki.se"
+wd="/nfs/GENETEC/TWAS/"
+wd=paste0(path_machine, wd)
+```
+
+## Set output
+```{r}
+# version
+ver="_v0.3"
+# Output dir
+dir_out=paste0(wd, "Manuscript/Figures/")
+file_out=c("Suppl.Figure_1A.Histograms_models_heritability", "Suppl.Figure_1B.Histograms_models_accuracy" )
+```
+
+## Input
+```{r}
+dir="/nfs/GENETEC/TWAS/Output/imputed_TECAC/summary_perm100K/"
+all <- read.table(paste0(path_machine, dir, 'TWAS_testis_tgct_scca_19839uniqGENES.dat'), header=T, sep="\t" )
+nrow(all)
+```
+```{r}
+# Re-name panels
+all$PANEL_x <- replace(all$PANEL, all$PANEL=="sCCA1" | all$PANEL=="sCCA2" | all$PANEL=="sCCA3", "Cross-tissue")
+all$PANEL_x[all$PANEL_x=="GTExv8.ALL.Testis" ] <- "Testis_normal"
+all$PANEL_x[all$PANEL_x=="TCGA-TGCT.TUMOR" ] <- "TGCT_tumor"
+```
+
+## R2 P-value distribution
+```{r}
+# all models
+table(cut(all$MODELCV.PV, c(0,0.001, 0.01, 0.05, 0.1,0.5,1) ) )
+```
+
+
+## Heritability distribution
+
+- All panesl
+```{r}
+summary(all$HSQ)
+```
+
+- Per panel
+```{r}
+d_hsq <- ddply(all, "PANEL_x", summarise, grp.mean=mean(HSQ))
+d_hsq
+```
+
+
+## R2 distribution
+
+- All panels
+```{r}
+# All models
+summary(all[all$MODELCV.PV<0.05,]$MODELCV.R2)
+```
+- Per panel
+```{r}
+d_r2 <- ddply(all, "PANEL_x", summarise, grp.mean=mean(MODELCV.R2))
+d_r2
+```
+
+## Prediction accuracy (R2 standardized by SNP heritability)
+```{r, echo=F}
+all$CV_acu <- all$MODELCV.R2 / all$HSQ
+summary(all$CV_acu)
+```
+- Per panel
+```{r}
+d_acu <- ddply(all, "PANEL_x", summarise, grp.mean=mean(CV_acu))
+d_acu
+```
+
+
+## Prediction accuracy (R2 standardized by SNP heritability): upper-bounded
+```{r}
+# trick, set to 1 if>1
+all$CV_acu_1 <- ifelse(all$CV_acu>1, 1, all$CV_acu)
+summary(all$CV_acu_1)
+```
+- Per panel
+```{r}
+d_acu1 <- ddply(all, "PANEL_x", summarise, grp.mean=mean(CV_acu_1))
+d_acu1
+```
+
+\newpage
+# Plots
+
+## Histogram cis-H2 heritability
+```{r}
+par(mfrow=c(2,2))
+# all panels
+hist(all$HSQ, main='All', xlab = NULL, ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all$HSQ), col = "darkred")
+# Testis panel
+hist(all[all$PANEL_x=='Testis_normal',]$HSQ, main='Normal testis', xlab = NULL, ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Testis_normal',]$HSQ), col = "darkred")
+# Cross-tissue panels
+hist(all[all$PANEL_x=='Cross-tissue',]$HSQ, main='Cross-tissue', xlab = "SNP heritablity ", ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Cross-tissue',]$HSQ), col = "darkred")
+# TGCT tumor panel
+hist(all[all$PANEL_x=='TGCT_tumor',]$HSQ, main='TGCT', xlab = "SNP heritablity", ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='TGCT_tumor',]$HSQ), col = "darkred")
+```
+
+- Save
+```{r, echo=T}
+png(file=paste0(dir_out, file_out[1], ver, ".png"), width=9, height=6, units="in", res=600 )
+
+par(mfrow=c(2,2))
+# all panels
+hist(all$HSQ, main='All', xlab = NULL, ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all$HSQ), col = "darkred")
+# Testis panel
+hist(all[all$PANEL_x=='Testis_normal',]$HSQ, main='Normal testis', xlab = NULL, ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Testis_normal',]$HSQ), col = "darkred")
+# Cross-tissue panels
+hist(all[all$PANEL_x=='Cross-tissue',]$HSQ, main='Cross-tissue', xlab = "SNP heritablity ", ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Cross-tissue',]$HSQ), col = "darkred")
+# TGCT tumor panel
+hist(all[all$PANEL_x=='TGCT_tumor',]$HSQ, main='TGCT', xlab = "SNP heritablity", ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='TGCT_tumor',]$HSQ), col = "darkred")
+
+dev.off()
+```
+
+
+
+## Histogram variance explained (R2)
+```{r, echo=T}
+par(mfrow=c(2,2))
+# all panels
+hist(all$MODELCV.R2, main='All', xlab = NULL, ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all$MODELCV.R2), col = "darkred")
+# Testis panel
+hist(all[all$PANEL_x=='Testis_normal',]$MODELCV.R2, main='Testis', xlab = NULL, ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Testis_normal',]$MODELCV.R2), col = "darkred")
+# Cross-tissue panels
+hist(all[all$PANEL_x=='Cross-tissue',]$MODELCV.R2, main='Cross-tissue', xlab = "Variance explained R2", ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Cross-tissue',]$MODELCV.R2), col = "darkred")
+# TGCT tumor panel
+hist(all[all$PANEL_x=='TGCT_tumor',]$MODELCV.R2, main='TGCT_tumor', xlab = "Variance explained R2", ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='TGCT_tumor',]$MODELCV.R2), col = "darkred")
+```
+
+
+
+## Prediction accuracy
+
+```{r, echo=T}
+par(mfrow=c(2,2))
+# all panels
+hist(all$CV_acu, main='All', xlab = NULL, ylab = "No. of models", breaks = "Sturges")
+abline(v = mean(all$CV_acu), col = "darkred")
+# Testis panel
+hist(all[all$PANEL_x=='Testis_normal',]$CV_acu, main='Normal testis', xlab = NULL, ylab = NULL, breaks = "Sturges")
+abline(v = mean(all[all$PANEL_x=='Testis_normal',]$CV_acu), col = "darkred")
+# Cross-tissue panels
+hist(all[all$PANEL_x=='Cross-tissue',]$CV_acu, main='Cross-tissue', xlab = "Accuracy R2/h2g", ylab = "No. of models", breaks = "Sturges")
+abline(v = mean(all[all$PANEL_x=='Cross-tissue',]$CV_acu), col = "darkred")
+# TGCT tumor panel
+hist(all[all$PANEL_x=='TGCT_tumor',]$CV_acu, main='TGCT_tumor', xlab = "Accuracy R2/h2g", ylab = NULL, breaks = "Sturges")
+abline(v = mean(all[all$PANEL_x=='TGCT_tumor',]$CV_acu), col = "darkred")
+```
+
+## Prediction accuracy (upper bounded by heritability)
+```{r}
+par(mfrow=c(2,2))
+# all panels
+hist(all$CV_acu_1, main='All', xlab = NULL, ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all$CV_acu_1), col = "darkred")
+# Testis panel
+hist(all[all$PANEL_x=='Testis_normal',]$CV_acu_1, main='Normal testis', xlab = NULL, ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Testis_normal',]$CV_acu_1), col = "darkred")
+# Cross-tissue panels
+hist(all[all$PANEL_x=='Cross-tissue',]$CV_acu_1, main='Cross-tissue', xlab = "Accuracy R2/h2g", ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Cross-tissue',]$CV_acu_1), col = "darkred")
+# TGCT tumor panel
+hist(all[all$PANEL_x=='TGCT_tumor',]$CV_acu_1, main='TGCT', xlab = "Accuracy R2/h2g", ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='TGCT_tumor',]$CV_acu_1), col = "darkred")
+```
+
+- Save
+```{r, echo=T}
+png(file=paste0(dir_out, file_out[2], ver, ".png"), width=9, height=6, units="in", res=600 )
+
+par(mfrow=c(2,2))
+# all panels
+hist(all$CV_acu_1, main='All', xlab = NULL, ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all$CV_acu_1), col = "darkred")
+# Testis panel
+hist(all[all$PANEL_x=='Testis_normal',]$CV_acu_1, main='Normal testis', xlab = NULL, ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Testis_normal',]$CV_acu_1), col = "darkred")
+# Cross-tissue panels
+hist(all[all$PANEL_x=='Cross-tissue',]$CV_acu_1, main='Cross-tissue', xlab = "Accuracy R2/h2g", ylab = "No. of models", breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='Cross-tissue',]$CV_acu_1), col = "darkred")
+# TGCT tumor panel
+hist(all[all$PANEL_x=='TGCT_tumor',]$CV_acu_1, main='TGCT', xlab = "Accuracy R2/h2g", ylab = NULL, breaks = seq(0,1,0.04), xlim=c(0,1))
+abline(v = mean(all[all$PANEL_x=='TGCT_tumor',]$CV_acu_1), col = "darkred")
+
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,578 @@
+---
+title: "Annotate TGCT TWAS results (FDR<0.01, 100K permutation_nominal)"
+author: "Emilio Ugalde <emilio.ugalde.morales@ki.se>"
+date: "June 22, 2023"
+output:
+  html_document: default
+  pdf_document: default
+  fontsize: 9pt
+---
+
+**OVERVIEW**: Summary of TWAS analysis using TECAC sumstats and five gene expression prediction panels: testis tissue (GTEx v_8), TGCT tumor tissue (TCGA), and three main cross-tissue features (sparse cannonical correlation analysis, sCCA, from 22 GTEx normal tissues). Testis was considered the main target tissue. Additional prediction models were included if available in TGCT panel, or if not, from the sCCA feature with best gene-level predictive performance. \
+
+**VERSION** control \
+In version 0.6: \
+  - Tables were generated using updated file including genome coordinates (see: Programs/2.Summarize_TWAS_v4_output_v3.20130620.R ) \
+In version 0.5: \
+  - Variable "GWAS_status" name changed to "GWAS_overlap" and codes as "Yes/No". \
+In version 0.4: \
+  - Added joint-conditional estimates. \
+In version 0.3: \
+  - TWAS results using 100K permutations to compute gene-permutation test. \
+  - Definition of "GWAS_status" for a gene was defined as "TRUE" if gene resides within a previously identified TGCT-GWAS loci (i.e. start site within 2Mb window around the index SNP). \
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(data.table)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+library(qqman)
+library(knitr)
+library(calibrate)
+library(markdown)
+#suppressMessages(library(kableExtra))
+```
+
+```{r}
+# Setup
+twas="TWAS_testis_tgct_scca_19839uniqGENES"
+
+## Source directory
+path_machine="/run/user/1000/gvfs/sftp:host=vector.meb.ki.se"
+wd="/nfs/GENETEC/TWAS/"
+wd=paste0(path_machine, wd)
+```
+
+# Set up OUPUT
+NOTE: Generate TWAS results annotated by conditional analysis and GWAS gene/risk loci ). \
+Based on: \
+- ONLY the subset of top genes that pass the gene permutation test (PERM.PV<0.05). \
+
+```{r} 
+# Output dir 
+dir_out=paste0(wd, "Manuscript/Tables/annot_100KpermNOM_only/") 
+``` 
+
+```{r}
+# Code book
+cb <- data.frame(matrix(c("ID", "Gene symbol"), nrow=1) )
+names(cb) <- c("VAR", "DEF" )
+# cb <- rbind(cb, c(" ", " "))
+```
+
+
+# Input
+See scripts (in ./TWAS/Programs/): \
+    - TWAS analysis: "1.TWAS_v4.sh" & "2.Summarize_TWAS_v4_output_v3.20230620.R" \
+    - Joint-conditional analysis: "3.Joint_conditional_perm100K_NOM_v0.1.sh" \
+\
+
+- Directories
+```{r, echo=T}
+## Full TWAS output
+dir=paste0(wd, "Output/imputed_TECAC/summary_perm100K/")
+## Joint-conditional in 91/165 permutation significant genes (PERM.PV<0.01) 
+dir_cond_perm=paste0(wd,"Output/imputed_TECAC/Joint_conditional_perm100K_NOM/compiled/")
+```
+
+- Data
+```{r, echo=T}
+# Top twas results
+top_in <- read.table(paste0(dir, twas, '_165_FDR01.dat'), header=T, sep="\t"  )
+# Join-conditional on permutation significant (nominal)
+## Gene-level analysis
+perm_joint <- read.table(paste0(dir_cond_perm, 'Joint_TWAS_testis_tgct_scca_19839uniqGENES_91_permutation_NOM.dat'), header=T, sep="\t"  ) 
+## Loci-level analysis
+perm_loci <- fread(paste0(dir_cond_perm, 'Report_51_loci.dat'))
+perm_loci$LOCUS.index <- seq(1:nrow(perm_loci)) # add Locus index
+## Joint conditional estimates
+join_ind <- fread(paste0(dir_cond_perm, 'LOCI_Joint_conditional_independent_genes.dat'))
+join_con <- fread(paste0(dir_cond_perm, 'LOCI_Joint_conditional_dropped_genes.dat'))
+```
+```{r}
+# TGCT GWAS results
+file_gwas = '~/Documents/postdoc_FW/projects/TWAS/Manuscript/tcgt_meta/Table_78_TGCT_loci.csv'
+```
+
+
+```{r}
+# Code book: Joint-conditional results at LOCUS-level 
+cb_loci <- data.frame(matrix(c("LOCUS", "Per-chromosome index of TWAS non-overlapping locus"), nrow=1) )
+names(cb_loci) <- c("VAR", "DEF" )
+# cb_loci <- rbind(cb_loci, c(" ", " "))
+cb_loci <- rbind(cb_loci, c("P0_loc", "Locus START base-pair (hg19)position"))
+cb_loci <- rbind(cb_loci, c("P1_loc", "Locus END base-pair (hg19)position"))
+cb_loci <- rbind(cb_loci, c("HIT.GENES", "Number of GENES within locus"))
+cb_loci <- rbind(cb_loci, c("JOINT.GENES", "Number of leading genes (i.e. uncorrelated and independently associated with the trait)"))
+cb_loci <- rbind(cb_loci, c("nSNPs", "Number of unique SNPs within the LOCUS region used in TWAS analysis (restricted to SNPs in 1KGenomes LDREF panel)"))
+cb_loci <- rbind(cb_loci, c("COND.SNP.P", "Best GWAS SNP P-value after subtracting TWAS joint estimate (effect of leading or single genes)"))
+cb_loci <- rbind(cb_loci, c("VAR.EXP", "GWAS signal of best GWAS SNP explained by leading genes at TWAS locus (i.e. 1 - snp.cond.z^2 / snp.z^2)"))
+cb_loci <- rbind(cb_loci, c("mean_VAR.EXP.avg", "Average VAR.EXP across all SNP in TWAS locus"))
+cb_loci <- rbind(cb_loci, c("mean_VAR.EXP.sug", "Average VAR.EXP across SNPs under GWAS-sug threshold: <1e-5"))
+cb_loci <- rbind(cb_loci, c("mean_VAR.EXP.lth", "Average VAR.EXP across SNPs under soft threshold: <1/nSNPs"))
+```
+
+
+```{r}
+# Code book: Joint-conditional results at GENE-level 
+cb_joint <- data.frame(matrix(c("JOINT", "TRUE if independently associated with the trait under joint-modeling at TWAS locus  (e.g. leading gene)"), nrow=1) )
+names(cb_joint) <- c("VAR", "DEF" )
+#cb_joint <- rbind(cb_joint, c(" ", " "))
+cb_joint <- rbind(cb_joint, c("JOINT_status", "joint_best: leading gene with largest TWAS-Z; conditional: conditionally associated with the trait; correlated: with best leading gene  (i.e. imputed-gene expression R2>0.9); single: only gene at the TWAS locus"))
+```
+
+```{r}
+# Code book: per-locus Joint-conditional GENE-level ESTIMATES
+cb_joint <- rbind(cb_joint, c("JOINT.*", "Joint-modeling estimates for conditionally-independent genes at a given locus" ))
+cb_joint <- rbind(cb_joint, c("COND.*", "Joint-modeling estimates conditional on the set of independent genes at a given locus" ))
+```
+
+
+```{r}
+## GWAS gene/risk loci
+gwas <- read.table(file_gwas, header=T, sep=";")
+gwas$CHR <- unlist( lapply(gwas$Cytoband, function(x) {strsplit(x, "p") } [[1]][1] ) )
+gwas$CHR <- unlist( lapply(gwas$CHR, function(x) {strsplit(x, "q") } [[1]][1] ) )
+```
+
+```{r}
+# Output file names
+name_out <- rep(NA, 3)
+# Gene table of top genes 
+name_out[1] <- paste0(twas, "_", nrow(top_in),"_TOP_ANNOT.dat")
+# JOINT (permutation significant loci)
+name_out[2] <- paste0(twas, "_", nrow(perm_loci), "_LOCI_perm_ANNOT.dat")
+# master file
+name_out[3] <- paste0(twas, "_", nrow(perm_joint), "permNOM_",nrow(perm_loci), "LOCI", ".master_ANNOT.dat" )
+```
+```{r}
+# Code book names
+code_book <- rep(NA, 3)
+# Gene table of top genes 
+code_book[1] <- paste0(twas, "_", nrow(top_in),"_TOP_ANNOT", ".code_book.txt")
+# JOINT (permutation significant loci)
+code_book[2] <- paste0(twas, "_", nrow(perm_loci), "_LOCI_perm_ANNOT", ".code_book.txt")
+# master file
+code_book[3] <- paste0(twas, "_", nrow(perm_joint), "permNOM_",nrow(perm_loci), "LOCI", ".master_ANNOT", ".code_book.txt" )
+```
+
+# Sumarize data
+
+```{r}
+# Format TOP results.
+top_in$BEST.GWAS.P <- 2*pnorm(q=abs(top_in$BEST.GWAS.Z), lower.tail=FALSE)
+# add to code book
+cb <- rbind(cb, c("BEST.GWAS.P", "P-value for the SNP with largest GWAS (imputed) statistic within gene's region"))
+```
+```{r}
+# Re-name panels
+top_in$PANEL_x <- replace(top_in$PANEL, top_in$PANEL=="sCCA1" | top_in$PANEL=="sCCA2" | top_in$PANEL=="sCCA3", "Cross-tissue")
+top_in$PANEL_x[top_in$PANEL_x=="GTExv8.ALL.Testis" ] <- "Testis_normal"
+top_in$PANEL_x[top_in$PANEL_x=="TCGA-TGCT.TUMOR" ] <- "TGCT_tumor"
+table(top_in$PANEL_x)
+```
+
+```{r}
+# Format gene permutation tests results.
+top_in$PERM.nom <- ifelse(top_in$PERM.PV<0.05, "yes", "no")
+top_in$PERM.bon <- ifelse(top_in$PERM.PV<0.05/nrow(top_in) , "yes", "no")
+top_in$PERM_FDR <- p.adjust(top_in$PERM.PV, method="fdr")
+top_in$PERM.fdr <- ifelse(top_in$PERM_FDR<0.01, "yes", "no")
+top_in <- top_in[, !names(top_in)%in%"PERM.ANL_PV"]
+```
+```{r}
+# add to code book
+cb <- rbind(cb, c("PERM.nom", "Yes if nominally significant GENE-permutation test"))
+cb <- rbind(cb, c("PERM.bon", "Yes if Bonferroni significant GENE-permutation test"))
+cb <- rbind(cb, c("PERM_FDR", "FDR-adjusted GENE-permutation p-value (Benjamini & Hochberg method) "))
+cb <- rbind(cb, c("PERM.bon", "Yes if FDR-adjusted GENE-permutation test <0.01"))
+```
+
+
+```{r}
+# Significance status for best SNP in gene
+top_in$BEST.GWAS.P_status <- ifelse(top_in$BEST.GWAS.P>=1e-5, "no-GWAS_sug", 
+                     ifelse(top_in$BEST.GWAS.P<1e-5 & top_in$BEST.GWAS.P>=5e-8, "GWAS_sug", "GWAS_hit")) 
+# add to code book
+cb <- rbind(cb, c("BEST.GWAS.P_status", "'no-GWAS_sug' if >=1e-5; 'GWAS_sug' if <1e-5; or 'GWAS_hit if' >=5e-8"))
+```
+```{r}
+# Permutation genes
+perm_loci$BEST.SNP.loc_status <- ifelse(perm_loci$BEST.SNP.P>=1e-5, "no-GWAS_sug", 
+                     ifelse(perm_loci$BEST.SNP.P<1e-5 & perm_loci$BEST.SNP.P>=5e-8, "GWAS_sug", "GWAS_hit")) 
+# add to code book
+cb <- rbind(cb, c("BEST.SNP.P", "P-value for the SNP with strongest association WITHIN the LOCUS region"))
+cb <- rbind(cb, c("BEST.SNP.loc_status", "'no-GWAS_sug' if >=1e-5; 'GWAS_sug' if <1e-5; or 'GWAS_hit if' >=5e-8"))
+```
+
+
+## TWAS results
+```{r}
+print(paste0("No. of TWAS-sig genes (FDR<0.1): ", nrow(top_in)))
+print(paste0("Also permutation significant: ", nrow(top_in[top_in$PERM.nom=="yes",])))
+```
+- TWAS P-value distribution:
+```{r}
+summary(-log10(top_in$TWAS.P))
+```
+- How many are above 75percentile of TWAS Pval distribution? \
+  + All top genes:
+```{r}
+TOPpval <- quantile(-log10(top_in$TWAS.P), 3/4 )
+table(-log10(top_in$TWAS.P) > TOPpval )
+```
+  + By permutation filter:
+```{r}
+table(-log10(top_in$TWAS.P) > TOPpval, top_in$PERM.nom)
+```
+  + Top genes that are **excluded** by using permutation filter
+```{r}
+top_in[top_in$PERM.nom=="no" & -log10(top_in$TWAS.P) > quantile(-log10(top_in$TWAS.P), 3/4 ), ]$ID
+```
+  + Top genes that are **selected** by using permutation filter
+```{r}
+top_in[top_in$PERM.nom=="yes" & -log10(top_in$TWAS.P) > quantile(-log10(top_in$TWAS.P), 3/4 ), ]$ID
+```
+
+
+### Bonferroni TWAS-significant genes
+Using FDR adjusted p-value, at 1% FDR significance threshold. \
+This would be equivalent to using a TWAS p-value threshold at 8.50e-05 significance level. \
+Original threshold based on Bonferroni correction (0.05/19839 = 2.47e-06). \
+
+```{r}
+# add variable
+top_in$TWAS.P.bon <- ifelse(top_in$TWAS.P<0.05/19839, "yes", "no")
+# add to code book
+cb <- rbind(cb, c("TWAS.P.bon", "Yes if: TWAS.P<0.05/19839"))
+```
+
+## Joint-conditional analysis
+
+- Restricted to **permutation-significant genes**.
+```{r}
+print(paste0("Permutation sig. genes: ", nrow(perm_joint)))
+print(paste0("Mapping to #LOCI: ", nrow(perm_loci)))
+print(paste0("Represented by #leading genes: ", length(which(perm_joint$JOINT)) ))
+```
+
+- Gene status (TRUE=leading genes that were selected)
+```{r}
+table(perm_joint$JOINT_status, perm_joint$JOINT)
+```
+
+\newpage
+# Annotate gene-level data
+```{r}
+# Add joint-conditional estimates
+perm_joint <- merge(perm_joint, join_ind, by="ID", all.x=T)
+perm_joint <- merge(perm_joint, join_con, by="ID", all.x=T)
+```
+
+```{r}
+# variables to be kept
+col_joint <- c("ID", "JOINT", "JOINT_status")
+col_joint <- append(col_joint, grep("JOINT", colnames(join_ind), value=T))
+col_joint <- append(col_joint, grep("COND", colnames(join_con), value=T))
+```
+
+```{r}
+top <- merge(top_in, perm_joint[, col_joint], by="ID", all.x=T)
+```
+
+## Add joint-conditional status to genes
+```{r}
+names(perm_loci)[3:4] <- c("P0_loc", "P1_loc")
+```
+```{r}
+# Retrieve locus for each top_inSNP
+top$LOCUS <- rep(NA, nrow(top))
+for(i in 1:nrow(top)){
+  chr=top[i,]$CHR
+  for(l in 1:nrow(perm_loci)){
+ top$LOCUS[i] <- ifelse(is.na(top[i,]$LOCUS)==T ,ifelse(top[i,]$P0>perm_loci[l,]$P0_loc && top[i,]$P1<perm_loci[l,]$P1_loc && perm_loci[l,]$CHR==chr, perm_loci[l,]$LOCUS, top[i,]$LOCUS ), top[i,]$LOCUS )
+   }
+}
+```
+- Check if all genes mapped to LOCUS
+```{r, include=T}
+str(factor(top$LOCUS))
+str(factor(perm_loci$LOCUS))
+perm_loci$LOCUS[!perm_loci$LOCUS%in%top$LOCUS]
+all(levels(perm_loci$LOCUS)==levels(top$LOCUS))
+```
+- Add Best gene/panel per locus
+```{r}
+# add best gene
+for(i in 1:length(perm_loci$LOCUS) ){
+  perm_loci$BEST.TWAS.ID[i] <- top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'ID'][which.min(top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'TWAS.P' ] ) ]
+}
+str(perm_loci$BEST.TWAS.ID)
+```
+```{r}
+# add best panel
+for(i in 1:length(perm_loci$LOCUS) ){
+  perm_loci$BEST.TWAS.PANEL[i] <- top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'PANEL'][which.min(top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'TWAS.P' ] ) ]
+}
+```
+```{r}
+# add best panel (formatted)
+for(i in 1:length(perm_loci$LOCUS) ){
+  perm_loci$BEST.TWAS.PANEL_x[i] <- top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'PANEL_x'][which.min(top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'TWAS.P' ] ) ]
+}
+```
+```{r}
+# add best geneType
+for(i in 1:length(perm_loci$LOCUS) ){
+  perm_loci$BEST.TWAS.geneType[i] <- top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'geneType'][which.min(top[top$LOCUS==perm_loci$LOCUS[i] & top$JOINT==T, 'TWAS.P' ] ) ]
+}
+```
+
+## Novel/known genes: map TWAS genes to GWAS loci
+Definition: gene start site residing within 2Mb window around the GWAS index SNP. \
+
+```{r}
+# Window one-side distance
+win=1e06
+# Create index vector (genes x loci)
+tmp_v <- NULL
+tmp_v$index <- seq(1, nrow(top)*nrow(gwas))
+tmp_v$ID <- rep(NA, nrow(top)*nrow(gwas))
+tmp_v$GWAS_label <- rep(NA, nrow(top)*nrow(gwas))
+tmp_v$GWAS_overlap <- rep(NA, nrow(top)*nrow(gwas))
+tmp_v$GWAS_SNP_dist <- rep(NA, nrow(top)*nrow(gwas))
+# Populate 
+for(i in 1:nrow(top)){
+  chr=top[i,]$CHR
+  id=rep( top[i,]$ID , nrow(gwas))
+  cnt=i-1
+  idx=seq( (nrow(gwas)*cnt)+1, nrow(gwas)*i )
+  tmp_v$ID[idx] <- id
+    for(l in 1:nrow(gwas) ){
+      tmp_v$GWAS_label[idx[l]] <- gwas[l,]$Label 
+      tmp_v$GWAS_overlap[idx[l]] <- ifelse(gwas[l,]$CHR==chr && (
+                                top[i,]$P0>gwas[l,]$Location_hg19-win && top[i,]$P0<gwas[l,]$Location_hg19+win ), "Yes", "No" )
+      tmp_v$GWAS_SNP_dist[idx[l]] <- ifelse(gwas[l,]$CHR==chr, top[i,]$P0 - gwas[l,]$Location_hg19, NA)
+    }
+}
+#as.data.frame(tmp_v)[79:85,]
+#as.data.frame(tmp_v)[390:395,]
+tmp_v <- as.data.frame(tmp_v)
+```
+
+- Summarize:
+```{r, echo=T}
+# Number of gene-loci overlaps
+nrow(tmp_v[tmp_v$GWAS_overlap=="Yes", ])
+# Number of unique gene-loci
+length(unique(tmp_v[tmp_v$GWAS_overlap=="Yes", ]$ID))
+```
+
+- Annotate whether adjudicated-implicated in GWAS loci.
+```{r}
+# Filter genes in loci 
+gene_loc <- tmp_v[tmp_v$GWAS_overlap=="Yes", ]
+```
+
+```{r}
+# Merge to GWAS table
+gene_loc <- merge(gene_loc, gwas[,c("Label", "Adjudicated_implicated.gene.s..")], by.x="GWAS_label", by.y="Label" )
+names(gene_loc)[names(gene_loc)=="Adjudicated_implicated.gene.s.."] <- "GWAS.Adjud_impl"
+```
+```{r}
+# grep gene ID to GWAS reported gene(s) 
+gene_loc$gwas_gene <- apply(gene_loc[, c("ID", "GWAS.Adjud_impl")], 1, function(x){grepl(x[1], x[2])} )
+# add to code book
+cb <- rbind(cb, c("gwas_gene", "TWAS gene same as any of 'GWAS.Adjud_impl' genes"))
+```
+
+
+```{r}
+# codes as "Prev_implicated"
+gene_loc$Prev_implicated <- ifelse(gene_loc$gwas_gene==T, "Yes", ifelse(gene_loc$gwas_gene==F & gene_loc$GWAS_overlap=="Yes", "No" ,  NA))
+# add to code book
+cb <- rbind(cb, c("Prev_implicated", "Yes: gene at a KNOWN GWAS loci reported as implicated-adjudicated"))
+``` 
+
+```{r, echo=T}
+# Time genes appear as been prev. adjud-implicated?
+table(gene_loc$Prev_implicated)
+```
+
+- Extract ALL instances when genes was reported as implicated.
+```{r}
+# Drop instances when "multiple-hit gene" is NOT implicated
+mult_gene_loc <- unique(gene_loc$ID[duplicated(gene_loc$ID)])
+mult_gene_drop <- NULL
+for(i in mult_gene_loc) {
+  keep <- NULL
+  if ( all(gene_loc[gene_loc$ID==i, ]$Prev_implicated=="No") ) { 
+    keep <- append(keep, gene_loc[gene_loc$ID==i, ]$index )  }
+      else drop <- gene_loc[gene_loc$ID==i & gene_loc$Prev_implicated=="No", ]$index
+  mult_gene_drop <- append(mult_gene_drop, drop)
+}
+gene_loc_filt <- gene_loc[!gene_loc$index%in%mult_gene_drop, ]
+```
+```{r, echo=T}
+table(gene_loc_filt$Prev_implicated)
+```
+
+- If still multiple overlaps per gene, select locus at nearest distance
+```{r}
+# If still multiple overlaps per gene, select locus at nearest distance
+mult_gene_loc <- unique(gene_loc_filt$ID[duplicated(gene_loc_filt$ID)])
+str(mult_gene_loc)
+```
+```{r}
+# Filter genes in loci 
+# For multiple gene-loci maps, filter genes by lowest distance
+mult_gene_loc_filt <- unique(gene_loc_filt$ID[duplicated(gene_loc_filt$ID)])
+mult_gene_drop <- NULL
+for(i in mult_gene_loc_filt) {
+  keep <- which.min( abs(gene_loc_filt[gene_loc_filt$ID==i, ]$GWAS_SNP_dist) )
+  drop <- gene_loc_filt[gene_loc_filt$ID==i, ]$index[-keep]
+  mult_gene_drop <- append(mult_gene_drop, drop)
+}
+gene_loc_filt <- gene_loc_filt[!gene_loc_filt$index%in%mult_gene_drop, ]
+```
+```{r, echo=T}
+nrow(gene_loc_filt)
+table(gene_loc_filt$Prev_implicated)
+```
+
+- Add to main table
+```{r}
+top <- merge(top, gene_loc_filt[, !colnames(gene_loc_filt)%in%c("index")], by="ID", all.x=T)
+```
+```{r, echo=T}
+# Code GWAS_overlap as Yes/No
+top$GWAS_overlap <- ifelse(is.na(top$GWAS_label)==F, "Yes", "No")
+table(top$GWAS_overlap)
+```
+
+```{r}
+# add to code book
+cb <- rbind(cb, c("GWAS_label", "Label for nearest GWAS loci (+/- 1Mb of index SNP) retrieved from Pluta et al (NatComm 2021)"))
+cb <- rbind(cb, c("GWAS_SNP_dist", "Distance (hg19 coordinate) from the nearest index SNP (i.e. gene-start site MINUS index SNP position)"))
+cb <- rbind(cb, c("GWAS_overlap", "Yes: if overlap with a previously identified TGCT-GWAS loci (i.e. gene start site (hg19 position) residing within 2Mb window around nearest index SNP); No, otherwise."))
+```
+
+- Is consistent with definition using Imputed-Sumstats
+```{r}
+table(top$GWAS_overlap, top$BEST.GWAS.P_status)
+```
+- Discordant: as "known" using imputed-Sumstats 
+```{r}
+top[top$GWAS_overlap=="Yes" & top$BEST.GWAS.P_status=="GWAS_hit", c("LOCUS","ID","CHR","BEST.GWAS.ID","BEST.GWAS.P", "GWAS_label" )]
+```
+- Discordant: as "Suggestive" using imputed-Sumstats 
+```{r}
+top[top$GWAS_overlap=="No" & top$BEST.GWAS.P_status=="GWAS_sug", c("LOCUS","ID","CHR", "BEST.GWAS.ID","BEST.GWAS.P", "GWAS_label" )]
+```              
+
+## Merge with GWAS table
+```{r}
+# add GWAS prefix to GWAS columns
+names(gwas) <- paste("GWAS", names(gwas), sep=".")
+names(gwas)[names(gwas)=="GWAS.Adjudicated_implicated.gene.s.."] <- "GWAS.Adjud_impl"
+# add to code book
+cb <- rbind(cb, c("GWAS.*", "Annotations from Pluta et al (NatComm 2021)"))
+```
+
+```{r}
+top <- merge(top, gwas[, names(gwas)[!names(gwas)%in%names(top)]], by.x="GWAS_label", by.y="GWAS.Label", all.x=T)
+```
+
+
+\newpage
+# Annotate novel/known PERMUTATION-significant LOCI: map TWAS loci to GWAS loci
+
+- Map TWAS loci to 2Mb window from any of the 78 known GWAS risk loci
+```{r}
+win=1000000
+mar=10000 # add margin of distance from SNP (at least 10 Kb within SNP window)
+perm_loci$GWAS_label_locus <- rep(NA, nrow(perm_loci))
+for(i in 1:nrow(perm_loci)){
+  chr=perm_loci[i,]$CHR
+  for(l in 1:nrow(gwas)){
+    # # is it TWAS gene boundary (P0, or P1) within 1Mb upstream or downstream of GWAS SNP? 
+ perm_loci$GWAS_label_locus[i] <- ifelse(is.na(perm_loci[i,]$GWAS_label_locus)==T ,ifelse(gwas[l,]$GWAS.CHR==chr && (
+                                (perm_loci[i,]$P0_loc>gwas[l,]$GWAS.Location_hg19-win && ( abs(perm_loci[i,]$P0_loc - gwas[l,]$GWAS.Location_hg19)<win-mar ) ) 
+                                || (perm_loci[i,]$P1_loc<gwas[l,]$GWAS.Location_hg19+win && ( abs(perm_loci[i,]$P1_loc - gwas[l,]$GWAS.Location_hg19)<win-mar ) ) ) , 
+                                gwas[l,]$GWAS.Label, perm_loci[i,]$GWAS_label_locus ), perm_loci[i,]$GWAS_label_locus )
+   }
+}
+```
+- How many loci are "known"
+```{r}
+table(is.na(perm_loci$GWAS_label_locus)==F)
+```
+```{r}
+# Code overlap with a TGCT risk loci
+perm_loci$GWAS_overlap_locus <- ifelse(is.na(perm_loci$GWAS_label_locus)==F, "Yes", "No")
+#perm_loci$GWAS_overlap_locus <- as.factor(is.na(perm_loci$GWAS_label_locus)==F)
+table(perm_loci$GWAS_overlap_locus )
+```
+```{r}
+# add to code book
+cb_loci <- rbind(cb_loci, c("GWAS_label_locus", "GWAS loci (2Mb window around index SNP) overlapping at least 10Kb with the LOCUS region"))
+cb_loci <- rbind(cb_loci, c("GWAS_overlap_locus", "Yes: if TWAS locus overlapping with a TGCT-GWAS loci"))
+```
+
+
+- Concordance with definition based on the TWAS summary statistics:
+```{r}
+table(perm_loci$GWAS_overlap_locus, perm_loci$BEST.SNP.loc_status)
+```
+- Discordant: as "Suggestive" using imputed-Sumstats 
+```{r}
+perm_loci[perm_loci$GWAS_overlap_locus==T & perm_loci$BEST.SNP.loc_status=="GWAS_sug", c("LOCUS","BEST.TWAS.ID","CHR","BEST.SNP.P", "GWAS_label_locus" )]
+```  
+
+\newpage
+## Save gene table of top genes 
+With columns to merge to: GWAS, joint, and joint_perm.
+```{r}
+write.table(top, paste0(dir_out, name_out[1]), col.names = T, row.names = F, quote = F, sep="\t")
+print(name_out[1])
+```
+```{r}
+# Code book
+write.table(rbind(cb, cb_joint), paste0(dir_out, code_book[1]), col.names = T, row.names = F, quote = F, sep="\t")
+```
+
+## Save JOINT (permutation significant loci)
+```{r}
+write.table(perm_loci, paste0(dir_out, name_out[2]), col.names = T, row.names = F, quote = F, sep="\t")
+print(name_out[2])
+```
+```{r}
+# Code book
+write.table(cb_loci, paste0(dir_out, code_book[2]), col.names = T, row.names = F, quote = F, sep="\t")
+```
+
+# Master file
+```{r}
+# columns to edit name
+cols_out <- names(perm_loci)[!names(perm_loci)%in%names(top)] 
+```
+```{r}
+# merge permLOCI
+master <- merge(top, perm_loci[, !'CHR'], by="LOCUS", all.x=T )
+```
+
+- Save table
+```{r}
+write.table(master, paste0(dir_out, name_out[3]), col.names = T, row.names = F, quote = F, sep="\t")
+print(name_out[3])
+```
+
+```{r}
+# Code book
+write.table(rbind(cb, cb_joint, cb_loci), paste0(dir_out, code_book[3]), col.names = T, row.names = F, quote = F, sep="\t")
+```
+
+
+
+

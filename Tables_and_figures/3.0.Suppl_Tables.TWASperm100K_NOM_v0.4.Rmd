@@ -1,0 +1,468 @@
+---
+title: "Supplementary manuscript tables 1-5: TWAS using 100K-permutated test"
+author: "Emilio Ugalde <emilio.ugalde.morales@ki.se>"
+date: "June 22, 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+Title="Identification of novel genes associated with testicular germ cell tumor susceptibility through a transcription wide association study"
+```
+
+**DESCRIPTION**: \
+Generate SUPPLEMENTARY tables: \
+- Supplementary Table 1. Full TGCT TWAS results. \
+- Supplementary Table 2. Gene permutation test results for the TWAS hits. \
+- Supplementary Table 3. TWAS joint-conditional results. \
+- Supplementary Table 4. TWAS joint-conditional gene estimates. \
+- Supplementary Table 5. Summary statistics-based GWAS results conditional on predicted expression. \
+
+**Version control** \
+In version 0.4: \
+  - S.Table 3 was spitted into S3 and S5. \
+  - Cytoband and genome coordinates in hg19 and hg38 were added. \
+  - Titles, legends, column names, and footnotes were added/edited. \
+
+In version 0.3: \
+  - Minor formatting: as in "Description_supplementary_tables_0.1.docx" \
+  - S.Table 1 was added. \
+  - NA's values printed as "-" \
+In prev. version (0.2): \
+  - Gene-level joint modeling estimates (joint and conditional analysis) are included. JOIN estimates are given for genes selected (i.e. conditionally-independent) at a given locus; CONDITIONAL estimates are given for the dropped genes (e.g. correlated and conditional) by subtracting effects from the independent genes. \ 
+
+```{r}
+# version sufix
+ver = "v0.4.dat"
+
+# Setup
+twas="TWAS_testis_tgct_scca_19839uniqGENES"
+
+## Source directory
+path_machine="/run/user/1000/gvfs/sftp:host=vector.meb.ki.se"
+wd="/nfs/GENETEC/TWAS/"
+wd=paste0(path_machine, wd)
+```
+
+## Output
+```{r}
+dir_out=paste0(wd, "Manuscript/Suppl_material/")
+# File names 
+name_out=c("S.Table_1.Full_TWAS", "S.Table_2.TWAS_165_FDR01", "S.Table_3.TWAS_51loci", "S.Table_4.PERM_63_P05", "S.Table_5.GWAS_conditional_51loci")
+```
+
+## Table headers and description
+- Table S1
+```{r}
+# Table name
+ST1_name <- "Supplementary Table 1. Full TGCT TWAS results."
+# Description
+ST1_description <- "TWAS results based on 19,839 heritable gene expression prediction models tested for association with TGCT risk using the FUSION method (See Figure 1A). Results are ordered by genomic position using GRCh37 (hg19) coordinates. Refer to FUSION documentation for information about individual columns."
+```
+
+- Table S2
+```{r}
+# Table name
+ST2_name <- "Supplementary Table 2. Gene permutation test results for the TWAS hits."
+# Description
+ST2_description <- "TWAS results for the 165 significant gene-TGCT associations at FDR less than 0.01 and the 91 genes regarded as robust findings based on the gene permutation test P-value less than 0.05 (See Figure 1B; upper boxes)."
+```
+
+- Table S3
+```{r}
+# Table name
+ST3_name <- "Supplementary Table 3. Joint-conditional analysis at 51 TWAS loci."
+# Description
+ST3_description <- "Locus-level results from the joint-conditional analysis based on the 91 genes with robust association mapping onto 51 genomic regions (See figure 1B; joint modeling)."
+```
+
+- Table S4
+```{r}
+# Table name
+ST4_name <- "Supplementary Table 4. TWAS joint-conditional estimates."
+# Description
+ST4_description <- "Gene-level estimates from the joint-conditional analysis performed on 91 genes with robust association of which 57 were identified as leading-independent genes (See figure 1B; joint modeling)."
+ST4_note <- "*Gene is classified either as: joint_best, leading gene with largest Z-score; joint_other, leading gene with no largest Z-score; conditional, gene conditional on leading gene(s); correlated, gene in high correlation with best leading gene (i.e. imputed-gene expression R2>0.9); single: only gene with robust association at locus."
+```
+
+- Table S5
+```{r}
+# Table name
+ST5_name <- "Supplementary Table 5. Summary statistics-based GWAS estimates conditional on predicted expression."
+# Description
+ST5_description <- "Results for the SNP GWAS associations at 51 TWAS loci conditioned on the predicted expression of the robust genes identified as conditionally-independent (see Supplementary Table 3)."
+ST5_note_1 <- "*Proportion of GWAS signal for the best cis-SNP explained by joint predicted expression of the leading-independent gene(s) in the locus (i.e. 1 - conditional GWAS Z-score^2 / GWAS Z-score^2)."
+ST5_note_2 <- "**Average variance explained on the subset of SNPs associated with TCGT risk under a soft P-value threshold  (i.e. GWAS P < 1/No. of SNPs in the locus)."
+```
+
+
+## Input
+- Full (compiled) TWAS results. See: Scripts/TWAS_v4.sh and Scripts/2.Summarize_TWAS_v4_output_v2.R \
+```{r}
+dir_f <- paste0(wd, "Output/imputed_TECAC/summary_perm100K/")
+imp_f <- "TWAS_testis_tgct_scca_19839uniqGENES.dat"
+```
+```{r}
+full <- read.table(paste0(dir_f, imp_f), header=T, sep="\t")
+```
+
+- Top results and annotations \
+NOTE: master file created using scripts: ./Manuscript/Scripts_results/1.0.Generate_TWAS_annotated_master_table_100KpermNOM_v0.5.Rmd \
+```{r}
+dir=paste0(wd, "Manuscript/Tables/annot_100KpermNOM_only/")
+imp="TWAS_testis_tgct_scca_19839uniqGENES_91permNOM_51LOCI.master_ANNOT.dat"
+```
+
+```{r}
+# Read in data
+top <- read.table(paste0(dir, imp), header=T, sep="\t")
+```
+
+## Variable names for publication
+```{r}
+col_names <- as.data.frame(rbind(c(1:2), c("OLD", "NEW")) )
+names(col_names) <- c("prev", "new")
+```
+
+- For Table S1 (all)
+```{r}
+col_names <- as.data.frame(rbind(col_names,
+                  c("PANEL", "Reference panel"),
+                  c("TISSUE", "Tissue"),
+                  c("FILE", "FUSION file name"),
+                  c("ID", "Gene symbol"),
+                  c("geneType", "ENSEMBL biotype"),
+                  c("CHR", "Chr"),
+                  c("P0_hg19", "Tx Start (hg19)"),
+                  c("P1_hg19", "Tx End (hg19)"),
+                  c("Cytoband_hg19", "Cytoband (hg19)"),
+                  c("P0_hg38", "Tx Start (hg38)"),
+                  c("P1_hg38", "Tx End (hg38)"),
+                  c("Cytoband_hg38", "Cytoband (hg38)"),
+                  c("HSQ", "Expression SNP heritability"),
+                  c("BEST.GWAS.ID", "Best GWAS SNP"),
+                  c("BEST.GWAS.Z", "Best GWAS Z"),
+                  c("EQTL.ID", "Best cis-SNP eQTL"),
+                  c("EQTL.R2", "eQTL Rsquared"),
+                  c("EQTL.Z", "eQTL Z"),
+                  c("EQTL.GWAS.Z", "eQTL GWAS Z"),
+                  c("NSNP", "No. of cis-SNPs"),
+                  c("NWGT", "No. of weighting cis-SNPs"),
+                  c("MODEL", "Prediction model"),
+                  c("MODELCV.R2", "Cross-validation Rsquared"),
+                  c("MODELCV.PV", "Cross-validation Rsquared P-value"),
+                  c("TWAS.Z", "TWAS Z"),
+                  c("EQTL_aligned", "TWAS Z consistent with eQTL"),
+                  c("TWAS.P", "TWAS P"),
+                  c("TWAS.P.fdr", "FDR-adjusted TWAS P")
+                  )
+)
+```
+
+- For Table S2
+```{r}
+col_names <- as.data.frame(rbind(col_names,
+                  c("Cytoband", "Cytoband"),
+                  c("Label", "TWAS hit label"),
+                  c("TWAS.P.bon", "Bonferroni significant (TWAS P<0.05/19839)"),
+                  c("PERM.PV", "Permutation P-value (using 10,000 iterations)"),
+                  c("PERM.nom", "Independent of GWAS effects (Permutation P<0.05))"),
+                  c("GWAS_overlap", "Overlap with a GWAS locus"),
+                  c("GWAS.Cytoband", "Cytoband (GWAS locus)"),
+                  c("GWAS.rsID", "GWAS rsID"),
+                  c("GWAS.Location_gh19", "GWAS location (hg19)"),
+                  c("GWAS.Adjud_impl", "GWAS adjudicated-implicated genes(s)"),
+                  c("Prev_implicated", "TWAS gene was GWAS adjudicated-implicated")
+                  )
+)
+```
+
+- For Table S3
+```{r}
+col_names <- as.data.frame(rbind(col_names,
+                  c("LOCUS.index", "Locus"),
+                  c("P0_loc", "Locus Start (hg19)"),
+                  c("P1_loc", "Locus End (hg19)"),
+                  c("HIT.GENES", "No. of genes in locus"),
+                  c("JOINT.GENES", "No. of independent genes"),
+                  c("HIT.GENES.IDs", "Genes in locus"),
+                  c("JOINT.GENES.IDs", "Independent genes")
+                  )
+)
+```
+
+- For Table S4
+```{r}
+col_names <- as.data.frame(rbind(col_names,
+                  c("Leading_gene", "Is joint-independent"),
+                  c("JOINT.Z", "Joint Z"),
+                  c("JOINT.P", "Joint P"),
+                  c("COND.Z", "Conditional Z (i.e. on the independent gene(s))"),
+                  c("COND.P", "Conditional P"),
+                  c("JOINT_status", "Joint modeling class*")
+                  )
+)
+```
+
+- For Table S5
+```{r}
+col_names <- as.data.frame(rbind(col_names,
+                  c("BEST.TWAS.ID", "Best TWAS gene"),
+                  c("BEST.TWAS.P", "Best TWAS P"),
+                  c("BEST.SNP.P", "Best SNP GWAS P at locus"),
+                  c("COND.SNP.P", "Best SNP GWAS P conditional on predicted expression"),
+                  c("VAR.EXP", "Variance explained (of best GWAS SNP)*"),
+                  c("mean_VAR.EXP.lth", "Variance explained at locus**"),
+                  c("nSNPs", "No. of SNPs in locus"),
+                  c("GWAS_overlap_locus", "Overlap with a GWAS locus")
+                  )
+)
+```
+## Format data
+```{r}
+# Full output
+full$PANEL_bk <- full$PANEL
+full$PANEL <- ifelse(full$PANEL_bk=="GTExv8.ALL.Testis", "GTExv8", 
+                     ifelse(full$PANEL_bk=="TCGA-TGCT.TUMOR", "TGCA", full$PANEL_bk))
+# add v8 to SCCA panel
+full$PANEL[grepl("sCCA", full$PANEL)] <- paste0(full$PANEL[grepl("sCCA", full$PANEL)], "v8")
+
+full$TISSUE <- ifelse(full$PANEL_bk=="GTExv8.ALL.Testis", "Testis", 
+                     ifelse(full$PANEL_bk=="TCGA-TGCT.TUMOR", "TGCT", "Cross-tissue"))
+full$FILE <- unlist(lapply(full$FILE, function(x) { strsplit(x, "/")[[1]][length(strsplit(x, "/")[[1]])] } ) )
+# Clean geneType names
+full$geneType <- gsub("_", " ", full$geneType)
+```
+
+```{r}
+# TWAS hits
+top$TISSUE <- ifelse(top$PANEL=="GTExv8.ALL.Testis", "Testis", 
+                     ifelse(top$PANEL=="TCGA-TGCT.TUMOR", "TGCT", "Cross-tissue"))
+top$BEST.TWAS.TISSUE <- ifelse(top$BEST.TWAS.PANEL=="GTExv8.ALL.Testis", "Testis", 
+                     ifelse(top$BEST.TWAS.PANEL=="TCGA-TGCT.TUMOR", "TGCT", "Cross-tissue"))
+# Remove annotations from the GWAS gene names (e.g.  "*")
+top$GWAS.Adjud_impl <- unlist(lapply(top$GWAS.Adjud_impl, function(x){sub("[*]", "", x)} ))
+top$GWAS.Adjud_impl <- unlist(lapply(top$GWAS.Adjud_impl, function(x){sub("(])", "", x)} ))
+top$GWAS.Adjud_impl <- replace(top$GWAS.Adjud_impl, top$GWAS.Adjud_impl=="Undetermined ", "Undetermined") 
+top$GWAS.Adjud_impl <- replace(top$GWAS.Adjud_impl, top$GWAS.Adjud_impl=="ZWILCH , RPL4", "ZWILCH, RPL4")
+# Sort by gene and position
+top <- top[order(top$CHR, top$P0), ]
+top$Cytoband <- top$Cytoband_hg19
+# Add numeric label
+top$Label <- seq(1:nrow(top)) 
+# TWAS locus
+top$Locus <- top$LOCUS.index
+# Clean geneType names
+top$geneType <- gsub("_", " ", top$geneType)
+```
+
+
+## Generate tables
+
+### S.Table 1
+```{r}
+paste0(name_out[1], "_",ver)
+```
+
+```{r}
+# Variables to be included
+col_0 <- c("PANEL", "TISSUE", "FILE","ID", "geneType", "CHR","P0_hg19","P1_hg19","Cytoband_hg19", "P0_hg38","P1_hg38","Cytoband_hg38","HSQ","BEST.GWAS.ID", "BEST.GWAS.Z","EQTL.ID", "EQTL.R2", "EQTL.Z","EQTL.GWAS.Z","NSNP","NWGT","MODEL","MODELCV.R2","MODELCV.PV", "TWAS.Z","EQTL_aligned", "TWAS.P", "TWAS.P.fdr")
+```
+
+```{r}
+# Extract variables; sort by chr_position
+out_1 <- full[ order(full$CHR, full$P0), col_0]
+# Re-name variables
+#names(out_1)[names(out_1)%in%col_names$prev] <- col_names[col_names$prev%in%names(out_1), ]$new
+names(out_1)[names(out_1)%in%col_names$prev] <- col_names[ match(names(out_1[names(out_1)%in%col_names$prev]), col_names$prev), ]$new
+```
+
+```{r}
+file=paste0(dir_out, name_out[1], "_",ver)
+cat(append(ST1_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST1_description, "\n"),  file=file, sep="\t", append = T )
+write.table(out_1, file=file, col.names = T, row.names = F, quote = F, sep="\t", append = T, na="-")
+```
+
+### S.Table 2
+```{r}
+paste0(name_out[2], "_",ver)
+```
+```{r}
+# Table 2 headers
+col_2 <- c("Label","ID", "CHR","P0_hg19","P1_hg19", "P0_hg38","P1_hg38", "Cytoband","TISSUE", "HSQ","NSNP","NWGT","MODEL","MODELCV.R2", "TWAS.Z","TWAS.P.fdr","TWAS.P.bon","PERM.PV", "PERM.nom", "GWAS_overlap","GWAS.Cytoband","GWAS.rsID", "GWAS.Location_hg19","GWAS.Adjud_impl","Prev_implicated")
+head_2 <- c("Gene information", " "," "," "," "," "," "," ", "TWAS-panel information", " "," "," "," "," ","TWAS inference", " "," ", " "," ","GWAS annotations (from Pluta et al., 2021)", " ", " "," "," "," ")
+```
+
+```{r}
+# Extract variables; sort by chr_position
+out_2 <- top[ , col_2]
+# Re-name variables
+names(out_2)[names(out_2)%in%col_names$prev] <- col_names[ match(names(out_2[names(out_2)%in%col_names$prev]), col_names$prev), ]$new
+```
+
+```{r}
+file=paste0(dir_out, name_out[2], "_",ver)
+cat(append(ST2_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST2_description, "\n"),  file=file, sep="\t", append = T )
+cat(append(head_2, "\n"), sep = "\t", file=file, append = T )
+write.table(out_2, file=file, col.names = T, row.names = F, quote = F, sep="\t", append = T, na="-")
+```
+
+
+## S.Table 3
+```{r}
+paste0(name_out[3], "_",ver)
+```
+
+- Subset TWAS loci
+```{r}
+# top[top$JOINT & is.na(top$JOINT)==F,  col_2][order(top[top$JOINT & is.na(top$JOINT)==F,]$Locus), ]
+out <- top[top$JOINT & is.na(top$JOINT)==F,  ]
+out <- out[!duplicated(out$LOCUS), ]
+nrow(out)
+```
+```{r, include=F}
+# Genes at locus
+top_loc <- top[top$PERM.nom=="yes", ]
+out$HIT.GENES.IDs <- rep(NA, nrow(out))
+for(i in 1:nrow(out)) {
+  LOCUS=out[i,]$Locus
+  for(g in 1:nrow(top_loc)) {
+  out$HIT.GENES.IDs[i] <- ifelse(is.na(out$HIT.GENES.IDs[i])==T, ifelse(top_loc[g,]$Locus==LOCUS, top_loc[g,]$ID, out$HIT.GENES.IDs[i]),
+                                ifelse(top_loc[g,]$Locus==LOCUS, paste(out$HIT.GENES.IDs[i], top_loc[g,]$ID, sep=", "), out$HIT.GENES.IDs[i] ) )
+  }
+}
+```
+```{r, include=F}
+# INDEPENDENT Genes at locus
+top_loc <- top[top$PERM.nom=="yes", ]
+out$JOINT.GENES.IDs <- rep(NA, nrow(out))
+for(i in 1:nrow(out)) {
+  LOCUS=out[i,]$Locus
+  for(g in 1:nrow(top_loc)) {
+  out$JOINT.GENES.IDs[i] <- ifelse(is.na(out$JOINT.GENES.IDs[i])==T, ifelse(top_loc[g,]$Locus==LOCUS & top_loc[g,]$JOINT==T, top_loc[g,]$ID, out$JOINT.GENES.IDs[i]),
+                                ifelse(top_loc[g,]$Locus==LOCUS & top_loc[g,]$JOINT==T, paste(out$JOINT.GENES.IDs[i], top_loc[g,]$ID, sep=", "), out$JOINT.GENES.IDs[i] ) )
+  }
+}
+```
+
+
+```{r}
+# Table 3 headers
+col_3 <- c("Locus", "CHR","P0_loc", "P1_loc", "HIT.GENES", "JOINT.GENES","HIT.GENES.IDs", "JOINT.GENES.IDs" )
+#head_3 <- c("Locus information", " "," "," ", " ","TWAS inference", " "," ","Joint-conditional analysis"," "," "," ", "GWAS-conditional analysis"," ", " "," ", "GWAS annotations (Pluta et al. 2021)")
+```
+
+```{r}
+# Extract variables; sort by chr_position
+out_3 <- out[ order(out$Locus, out$P0_loc), col_3]
+# Re-name variables
+names(out_3)[names(out_3)%in%col_names$prev] <- col_names[ match(names(out_3[names(out_3)%in%col_names$prev]), col_names$prev), ]$new
+```
+
+```{r}
+file=paste0(dir_out, name_out[3], "_",ver)
+cat(append(ST3_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST3_description, "\n"),  file=file, sep="\t", append = T )
+write.table(out_3, file=file, col.names = T, row.names = F, quote = F, sep="\t", append = T, na="-")
+```
+
+
+### S.Table 4
+```{r}
+paste0(name_out[4], "_",ver)
+```
+
+```{r}
+out_4 <- top[top$PERM.nom=="yes", ]
+nrow(out_4)
+```
+
+- Add column: "Leading_gene" if conditionally-independent (e.g. not conditional or correlated to leading gene).
+```{r}
+out_4$Leading_gene <- ifelse(out_4$JOINT_status!="conditional" & out_4$JOINT_status!="correlated", "yes", "no")
+table(out_4$Leading_gene)
+```
+
+```{r}
+# Table 4 headers
+col_4 <- c("ID", "CHR","Cytoband","P0_hg19","P1_hg19", "P0_hg38","P1_hg38","TISSUE","TWAS.Z", "Locus", "Leading_gene", "JOINT.Z", "JOINT.P", "COND.Z", "COND.P","JOINT_status", "GWAS_overlap","GWAS.Adjud_impl", "Prev_implicated")
+head_4 <- c("Gene information", " "," "," ", " "," "," ","TWAS inference"," ","Joint-conditional analysis"," "," "," "," "," "," ", "GWAS annotations (Pluta et al. 2021)"," ", " ")
+```
+
+```{r}
+# Extract variables; sort by chr_position
+out_4 <- out_4[ order(out_4$Locus, out_4$P0_loc), col_4]
+# Re-name variables
+names(out_4)[names(out_4)%in%col_names$prev] <- col_names[ match(names(out_4[names(out_4)%in%col_names$prev]), col_names$prev), ]$new
+```
+
+```{r}
+file=paste0(dir_out, name_out[4], "_",ver)
+
+cat(append(ST4_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST4_description, "\n"),  file=file, sep="\t", append = T )
+cat(append(head_4, "\n"), sep = "\t", file=file, append = T )
+
+write.table(out_4, file=file, col.names = T, row.names = F, quote = F, sep="\t", append = T, na="-")
+
+cat(append(ST4_note, "\n"), sep = "\t", file=file, append = T )
+
+```
+
+
+
+### S.Table 5
+```{r}
+paste0(name_out[5], "_",ver)
+```
+```{r}
+# Table 5 headers
+col_5 <- c("Locus", "CHR","P0_loc","P1_loc","nSNPs","BEST.TWAS.ID", "BEST.TWAS.P","BEST.SNP.P", "COND.SNP.P", "VAR.EXP", "mean_VAR.EXP.lth", "GWAS_overlap_locus" )
+head_5 <- c("Locus information", " "," "," ", " "," ", " ", "GWAS-conditional analysis"," "," "," ", "GWAS annotations (Pluta et al. 2021)")
+```
+
+
+```{r}
+# Extract variables; sort by chr_position
+out_5 <- out[ order(out$Locus, out$P0_loc), col_5]
+# Re-name variables
+names(out_5)[names(out_5)%in%col_names$prev] <- col_names[ match(names(out_5[names(out_5)%in%col_names$prev]), col_names$prev), ]$new
+```
+
+```{r}
+file=paste0(dir_out, name_out[5], "_",ver)
+
+cat(append(ST5_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST5_description, "\n"),  file=file, sep="\t", append = T )
+cat(append(head_5, "\n"), sep = "\t", file=file, append = T )
+
+write.table(out_5, file=file, col.names = T, row.names = F, quote = F, sep="\t", append = T, na="-")
+
+cat(append(ST5_note_1, "\n"), sep = "\t", file=file, append = T )
+cat(append(ST5_note_2, "\n"), sep = "\t", file=file, append = T )
+```
+
+
+## Make index (table of contents)
+
+```{r}
+file=paste0(dir_out, "Index_supplementary_tables", "_",ver)
+
+cat(append(Title, "\n"), file=file, sep="\t", append = T )
+cat(append("", "\n"), file=file, sep="\t", append = T )
+cat(append(ST1_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST2_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST3_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST4_name, "\n"), file=file, sep="\t", append = T )
+cat(append(ST5_name, "\n"), file=file, sep="\t", append = T )
+
+```
+
+
+
+

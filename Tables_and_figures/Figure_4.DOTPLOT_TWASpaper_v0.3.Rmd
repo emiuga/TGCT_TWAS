@@ -1,0 +1,853 @@
+---
+title: "Single cell data plots (for TWAS paper): germ cells"
+author: "Emilio Ugalde"
+date: "Apr 18, 2023"
+output: html_document
+---
+
+Generate dot-plot for top TWAS genes showing expression of genes at different stages of disease development (for paper). \
+NOTE: Include top10-TWAS genes (i.e. independent and lowest permutation p-val) found in the gonadal single-cell expression data set . \
+
+DESCRIPTION: \
+Expression data on 3 expression data sets:
+1) Single-cell RNA expression levels on relevant testis development tissues to support TWAS findings. \
+2) Precursor micro-disection data set (from Kristian). \
+3) TCGT-TGCA tumors  (data provided by Rona). \
+\
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(zellkonverter)
+library(SingleCellExperiment)
+library(scran)
+library(reshape2)
+library(ggplot2)
+library(ggExtra)
+library(tidyverse)
+library(ggpubr)
+```
+
+```{r}
+dir='/home/emiuga/Documents/postdoc_FW/projects/testis/single_cell'
+setwd(paste0(dir, "/Scripts"))
+```
+
+## Output file
+
+- Set the 
+```{r}
+# number of top genes to be included
+n_top=10
+```
+```{r}
+# PREFIX
+out_pref=paste0("dotplot_GERM_GCNIS_TCGA_datasets_TWAS_top", n_top)
+```
+
+```{r}
+# VERSION
+ver = "v0.3"
+```
+
+## Cell-type marker genes
+NOTE: on single-cell gonadal data, selected: transcription factors expressed during cell states of germ cell differentiation (taken from paper: main text). \
+
+1. PGC: PRDM14, BMP4, BLIMP1=PRDM1 \
+2. Pre-spermatogonia: KLF6 \
+3. Pre-oocyte: DMRTC2 \
+
+4. Germ cells: DAZL \
+5. Sertoli: SOX9 \
+6. Fetal Leydig: NR5A1 \
+
+7. ESC (embryonic stem cell): DPPA3, POU5F1, NANOG \ 
+8. Spermatogenesis: TNP1, PRM1, PIWIL1, VASA=DDX4 \
+9. GCNIS: TFAP2C, POU5F1, SOX17 \
+
+10. Seminoma: SOX17 \
+11. Non-seminoma: SOX2 \
+
+```{r}
+m1 = c("PRDM14", "BMP4", "PRDM1")
+m2 = "KLF6"
+m3 = "DMRTC2"
+m4 = "DAZL"
+m5 = "SOX9"
+m6 = "NR5A1"
+m7 = c("DPPA3", "POU5F1", "NANOG")
+m8 = c("TNP1", "PRM1", "PIWIL1", "DDX4")
+m9 = c("TFAP2C", "POU5F1", "SOX17")
+m10 = "SOX17"
+m11 = "SOX2"
+
+mark_L <- mget(paste0("m", 1:11))
+mark_all <- unique(unlist(mark_L))
+str(mark_all)
+```
+- Template to select marker genes for the 10 conditions (cell types)
+```{r}
+# Select first gene as baseline
+#mkr_template <- paste0("mkr", 1:10)
+mkr_template <- unlist(lapply(mark_L, function(x) { x[[1]]}) )
+mkr_template
+```
+
+
+## TWAS genes
+```{r}
+dir_twas <- "/home/emiuga/Documents/postdoc_FW/projects/TWAS/Manuscript/Draft/Results_20230203/"
+file_twas <- "TWAS_testis_tgct_scca_19839uniqGENES_91permNOM_51LOCI.master_ANNOT.dat"
+file_twas_full <- "TWAS_testis_tgct_scca_19839uniqGENES.dat"
+```
+```{r}
+twas <- read.table(paste0(dir_twas, file_twas), header=T, sep="\t" )
+full <- read.table(paste0(dir_twas, file_twas_full), header=T, sep="\t" )
+```
+
+```{r}
+joint_known <- twas[which(twas$JOINT), ][twas[which(twas$JOINT), ]$GWAS_overlap=="Yes", ]
+joint_novel <- twas[which(twas$JOINT), ][twas[which(twas$JOINT), ]$GWAS_overlap=="No", ]
+```
+
+\newpage
+# Single-cell gonadal data: germ cell differentiation
+DATA reference: Single-cell roadmap of human gonadal development \
+https://www.nature.com/articles/s41586-022-04918-4#Sec1 \
+\
+Cell types to be included: \
+- PGC (primordial germ cells) \
+- Pre-spermatogonia \
+- Pre-oocyte \
+
+```{r, message=F}
+## heavy: will install miniconda by default on first run
+dd <- readH5AD(paste0(dir, "/Data/human_germcells.h5ad"), use_hdf5 = TRUE) 
+# dd
+```
+
+```{r}
+# Get expression object
+X <- assay(dd, "X")
+dim(X)
+```
+- Apply QC filters (cell-level)
+```{r}
+# high_mito (TRUE==28277)
+high_mito <- which(dd@colData$high_mito=="False")
+# is_doublet (TRUE==2869)
+is_doublet <- which(dd@colData$is_doublet==F)
+# To remove
+filter <- intersect(high_mito, is_doublet)
+
+## Filter celltypes of interest
+celltype <- as.vector(colData(dd)$celltype)
+keep <- which(celltype=="PGC" | celltype=="pre_spermatogonia" | celltype=="pre_oocyte")
+select <- intersect(keep, filter)
+```
+
+- Cell count from different cell-types
+```{r}
+celltype_filt <- as.factor(celltype[select])
+table(celltype_filt)
+```
+- Overlap with TWAS genes
+```{r, eval=F}
+# overlap genes
+twas_sc <- twas[twas$ID%in%rownames(X), ]
+```
+```{r, eval=F}
+# Select protein-coding genes (do not)
+twas_sc <- twas[twas$geneType=="protein_coding", ]
+```
+
+```{r, eval=F}
+joint_known <- twas_sc[which(twas_sc$JOINT), ][twas_sc[which(twas_sc$JOINT), ]$GWAS_overlap=="Yes", ]
+joint_novel <- twas_sc[which(twas_sc$JOINT), ][twas_sc[which(twas_sc$JOINT), ]$GWAS_overlap=="No", ]
+```
+
+- Top SELECTED genes (lowest PERM.PV)
+```{r}
+top_known <- joint_known[joint_known$ID%in%rownames(X), ]
+top_known <- top_known[order(top_known$PERM.PV), ]$ID[1:n_top]
+top_known
+```
+```{r}
+top_novel <- joint_novel[joint_novel$ID%in%rownames(X), ]
+top_novel <- top_novel[order(top_novel$PERM.PV), ]$ID[1:n_top]
+top_novel
+```
+```{r}
+gl_top <- append(top_known, top_novel)
+# Plus markers
+gl_top_PC <- append(gl_top, mark_all)
+```
+
+- Are all genes in data set?
+```{r}
+# Topt TWAS genes
+all(gl_top%in%rownames(X))
+# Marker genes
+all(mark_all%in%rownames(X))
+#mark_all[!mark_all%in%rownames(X)]
+```
+
+- Compile PLOT data
+```{r}
+# Set order
+cell_plot <- c("pre_oocyte", "pre_spermatogonia", "PGC")
+```
+
+```{r}
+# Subset expression
+X_top_PC <- X[rownames(X)%in%gl_top_PC, select]
+```
+
+- Compute per-GENE mean variance-scaled expression across cells
+```{r}
+avsd_top_PC <- apply(X_top_PC, 1, function(x) tapply(x, celltype_filt, function(x) { mean(scale(x, center = F), na.rm=T ) } ))
+avsd_top_PC <- avsd_top_PC[cell_plot, gl_top_PC]
+avsd_top_PC[is.na(avsd_top_PC)] <- 0
+apply(avsd_top_PC, 1, summary)
+```
+- Compute per-GENE proportion of cells with NON-ZERO expression (ALL)
+```{r}
+nze_top_PC <- apply(X_top_PC, 1, function(x) tapply(x, celltype_filt, function(x) {length(x[x>0])/length(x)*100 } ))
+nze_top_PC <- nze_top_PC[cell_plot, gl_top_PC]
+```
+
+```{r}
+# Summarize
+apply(nze_top_PC, 1, summary)
+```
+
+```{r}
+# expland for plotting
+exp_top_L <- melt(avsd_top_PC, varnames = c("Celltype", "Gene"))
+names(exp_top_L)[names(exp_top_L)%in%"value"] <- "ave_exp"
+#exp_top_L$av_exp <- norm_fun(exp_top_L$av_exp)
+# add proportion of expressed cells
+nze_top_PC_L <- melt(nze_top_PC, varnames = c("Celltype", "Gene"))
+all(nze_top_PC_L$Gene==nze_top_PC_L$Gene) # TRUE # gene rows in same order
+exp_top_L$p_cells <-  nze_top_PC_L$value
+```
+```{r}
+top_legend=paste0("(top", n_top, ")")
+top_legend_G=paste0("At GWAS locus ", top_legend)
+top_legend_NG=paste0("At non-GWAS locus ", top_legend)
+```
+```{r}
+exp_top_L$GeneType <- ifelse(exp_top_L$Gene%in%top_known, top_legend_G, 
+                               ifelse(exp_top_L$Gene%in%top_novel, top_legend_NG, "Marker"))
+exp_top_L$GeneType <- factor(exp_top_L$GeneType, levels=c(top_legend_G, top_legend_NG, "Marker"))
+```
+
+
+## Explore marker genes (Germ cells: PGC)
+
+```{r}
+# dotplot
+ggplot(exp_top_L[exp_top_L$Gene%in%m1, ], aes(x = Gene, y = Celltype, size=p_cells, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical") + scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint = mean(exp_top_L$ave_exp), na.value = "gray" ) +
+  facet_grid(~GeneType, space="free_x", scales="free_x",) +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+```
+
+- **Select**: "PRDM1"
+```{r}
+# Add to marker template 
+mkr_template[1] <- "PRDM1"
+```
+
+- Plot
+```{r}
+# selected genes
+gL <- append(gl_top, mkr_template[1:3])
+# dotplot
+ggplot(exp_top_L[exp_top_L$Gene%in%gL, ], aes(x = Gene, y = Celltype, size=p_cells, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical") + scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint = mean(exp_top_L$ave_exp), na.value = "gray") +
+  facet_grid(~GeneType, space="free_x", scales="free_x",) +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+```
+- Marker plot
+```{r}
+p_m1 <- rbind(exp_top_L[exp_top_L$Celltype%in%cell_plot[3] & exp_top_L$Gene%in%mkr_template[1], ],
+              exp_top_L[exp_top_L$Celltype%in%cell_plot[2] & exp_top_L$Gene%in%mkr_template[2], ],
+              exp_top_L[exp_top_L$Celltype%in%cell_plot[1] & exp_top_L$Gene%in%mkr_template[3], ])
+```
+
+```{r}
+# Function: https://github.com/tidyverse/ggplot2/issues/3171
+guide_axis_label_trans <- function(label_trans = identity, ...) {
+  axis_guide <- guide_axis(...)
+  axis_guide$label_trans <- rlang::as_function(label_trans)
+  class(axis_guide) <- c("guide_axis_trans", class(axis_guide))
+  axis_guide
+}
+
+guide_train.guide_axis_trans <- function(x, ...) {
+  trained <- NextMethod()
+  trained$key$.label <- x$label_trans(trained$key$.label)
+  trained
+}
+```
+
+```{r}
+#xlim = c(min(exp_top_L$ave_exp), max(exp_top_L$ave_exp))
+#zlim = c(min(exp_top_L$p_cells), max(exp_top_L$p_cells))
+xlim = c(0, 0.8)
+zlim = c(0, 80)
+
+ggplot(p_m1, aes(x = GeneType, y = Gene, z=Celltype, size=p_cells, color=ave_exp)) + geom_point() + theme(axis.text.y = element_text(angle = 0, vjust = 0.5, hjust=0), legend.box = "vertical") + scale_y_discrete(position = "right") + guides(y.sec= guide_axis_label_trans(~levels(p_m1$Celltype))) + scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint = mean(exp_top_L$ave_exp), na.value = "gray", guide = "colourbar", limits=xlim ) + scale_size(limits = zlim)  +
+  facet_grid(~GeneType, space="free_x", scales="free_x",) +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+
+# sec_axis=sec_axis(~.*Celltype, labels = p_m1$Celltype)
+```
+
+```{r}
+p_m1x <- p_m1
+p_m1x$label <- as.character(p_m1x$Gene)
+p_m1x$Gene <- "Marker"
+p_m1x$GeneType <- " "
+
+tmp_a <- exp_top_L[exp_top_L$Gene%in%gL & exp_top_L$GeneType!="Marker", ]
+tmp_a$label <- " "
+dp1 <- rbind(tmp_a, p_m1x )
+```
+
+```{r}
+# Secondary axis text
+sec_text <- rev(mkr_template[1:3])
+# y-axis labels
+#dp1$Celltype <- as.factor(dp1$Celltype)
+lab_ctype <- levels(dp1$Celltype)
+ylims = limits = c(0.5,length(lab_ctype)+0.5)
+# plot
+
+DP_a <- ggplot(dp1, aes(x = Gene, y = as.numeric(Celltype), size=p_cells, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical", panel.grid.minor = element_blank()) + scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint =mean(exp_top_L$ave_exp), na.value = "gray" ) + 
+  scale_y_continuous(breaks=1:length(lab_ctype), labels=lab_ctype, sec.axis = sec_axis(~., breaks=1:length(sec_text), labels=sec_text), limits = ylims) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+        strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+
+DP_a
+```
+
+
+\newpage
+# Single-cell gonadal data: Somatic germ cells (male samples, n=22)
+```{r, eval=F}
+# back up prev. data
+bk_X <- X
+```
+```{r, message=F}
+## heavy: will install miniconda by default on first run
+dd <- readH5AD(paste0(dir, "/Data/human_main_male.h5ad"), use_hdf5 = TRUE) 
+# Get expression object
+X <- assay(dd, "X")
+# Filter data
+## Apply QC filters (cell-level)
+# high_mito 
+high_mito <- which(dd@colData$high_mito=="False")
+# is_doublet
+is_doublet <- which(dd@colData$is_doublet==F)
+# remove
+filter <- intersect(high_mito, is_doublet)
+celltype <- as.vector(colData(dd)$lineage)
+keep <- which(celltype=="GermCells" | celltype=="Sertoli" | celltype=="FetalLeydig" )
+select <- intersect(keep, filter)
+## Cells
+celltype_filt <- as.factor(celltype[select])
+```
+
+```{r}
+Ncells <- as.vector(table(celltype_filt))
+names(Ncells) <- names(table(celltype_filt))
+Ncells
+```
+
+- Are all genes in data set?
+```{r}
+# Topt TWAS genes
+all(gl_top%in%rownames(X))
+# Marker genes
+all(mark_all%in%rownames(X))
+#mark_all[!mark_all%in%rownames(X)]
+```
+- Compile PLOT data
+```{r}
+# Set order
+cell_plot <- c("FetalLeydig", "Sertoli", "GermCells")
+```
+
+```{r}
+gl_top_PC <- append(gl_top, mark_all)
+# Subset expression
+X_top_PC <- X[rownames(X)%in%gl_top_PC, select]
+```
+- Compute mean gene-expression 
+```{r}
+avsd_top_PC <- apply(X_top_PC, 1, function(x) tapply(x, celltype_filt, function(x) { mean(scale(x, center = F), na.rm=T ) } ))
+avsd_top_PC <- avsd_top_PC[cell_plot, gl_top_PC]
+avsd_top_PC[is.na(avsd_top_PC)] <- 0
+apply(avsd_top_PC, 1, summary)
+```
+
+- Compute per-GENE proportion of cells with NON-ZERO expression (ALL)
+```{r}
+nze_top_PC <- apply(X_top_PC, 1, function(x) tapply(x, celltype_filt, function(x) {length(x[x>0])/length(x)*100 } ))
+nze_top_PC <- nze_top_PC[cell_plot, gl_top_PC]
+```
+```{r}
+# Summarize
+apply(nze_top_PC, 1, summary)
+```
+
+```{r}
+# expland for plotting
+exp_top_L <- melt(avsd_top_PC, varnames = c("Celltype", "Gene"))
+names(exp_top_L)[names(exp_top_L)%in%"value"] <- "ave_exp"
+#exp_top_L$av_exp <- norm_fun(exp_top_L$av_exp)
+# add proportion of expressed cells
+nze_top_PC_L <- melt(nze_top_PC, varnames = c("Celltype", "Gene"))
+all(nze_top_PC_L$Gene==nze_top_PC_L$Gene) # TRUE # gene rows in same order
+exp_top_L$p_cells <-  nze_top_PC_L$value
+```
+```{r}
+exp_top_L$GeneType <- ifelse(exp_top_L$Gene%in%top_known, top_legend_G, 
+                               ifelse(exp_top_L$Gene%in%top_novel, top_legend_NG, "Marker"))
+exp_top_L$GeneType <- factor(exp_top_L$GeneType, levels=c(top_legend_G, top_legend_NG, "Marker"))
+```
+
+- Plot
+```{r}
+# select genes
+gL2 <- append(gl_top, mkr_template[4:6])
+# dotplot
+ggplot(exp_top_L[exp_top_L$Gene%in%gL2, ], aes(x = Gene, y = Celltype, size=p_cells, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical") + scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint = mean(exp_top_L$ave_exp), na.value = "gray" ) +
+  facet_grid(~GeneType, space="free_x", scales="free_x",) +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+```
+- Marker plot
+```{r}
+p_m2 <- rbind(exp_top_L[exp_top_L$Celltype%in%cell_plot[3] & exp_top_L$Gene%in%mkr_template[4], ],
+              exp_top_L[exp_top_L$Celltype%in%cell_plot[2] & exp_top_L$Gene%in%mkr_template[5], ],
+              exp_top_L[exp_top_L$Celltype%in%cell_plot[1] & exp_top_L$Gene%in%mkr_template[6], ])
+```
+
+
+
+```{r}
+p_m2x <- p_m2
+p_m2x$label <- as.character(p_m2x$Gene)
+p_m2x$Gene <- "Marker"
+p_m2x$GeneType <- " "
+
+tmp_b <- exp_top_L[exp_top_L$Gene%in%gL2 & exp_top_L$GeneType!="Marker", ]
+tmp_b$label <- " "
+dp2 <- rbind(tmp_b, p_m2x )
+```
+
+```{r}
+# Secondary axis text
+sec_text2 <- rev(mkr_template[4:6])
+# y-axis labels
+#dp1$Celltype <- as.factor(dp1$Celltype)
+lab_ctype <- levels(dp2$Celltype)
+ylims = limits = c(0.5,length(lab_ctype)+0.5)
+# plot
+
+DP_b <- ggplot(dp2, aes(x = Gene, y = as.numeric(Celltype), size=p_cells, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical", panel.grid.minor = element_blank()) + scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint =mean(exp_top_L$ave_exp), na.value = "gray" ) + 
+  scale_y_continuous(breaks=1:length(lab_ctype), labels=lab_ctype, sec.axis = sec_axis(~., breaks=1:length(sec_text2), labels=sec_text), limits = ylims) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+        strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+
+DP_b
+```
+
+## Merge plot
+```{r}
+dp1$type <- factor(rep("Germ cell diferentiation", nrow(dp1)) )
+dp2$type <- factor(rep("Somatic germ cells", nrow(dp2)) )
+dp_12 <- rbind(dp2, dp1)
+```
+
+```{r}
+# Secondary axis text
+sec_text_12 <- rev(mkr_template[1:6])
+# y-axis labels
+#dp1$Celltype <- as.factor(dp1$Celltype)
+lab_ctype <- levels(dp_12$Celltype)
+ylims = limits = c(0.5,length(lab_ctype)+0.5)
+size_range=c(0,80)
+# plot
+
+DP_ab <- ggplot(dp_12, aes(x = Gene, y = as.numeric(Celltype), size=p_cells, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "horizontal", panel.grid.minor = element_blank()) + scale_color_gradient2(low = "wheat1", mid = "chocolate1", high = "firebrick4", midpoint =mean(dp_12$ave_exp), na.value = "gray", name="Expr. level" ) + scale_size(limits = size_range, name = "% of cells") +
+  scale_y_continuous(breaks=1:length(lab_ctype), labels=lab_ctype, sec.axis = sec_axis(~., breaks=1:length(sec_text_12), labels=sec_text_12), limits = ylims) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+        strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+
+```
+
+
+\newpage
+# Germ cell neoplasia in situ (GCNIS) dataset
+
+- Gene-level aggregated data set on relevant cell-types. \
+See: Scripts/Process_GCNIS_data_v0.1.Rmd
+```{r}
+# file prefix
+dir="~/Documents/postdoc_FW/projects/TWAS/CNIS"
+file="/DerivedData/GCNIS_aggregated_20230314.txt"
+```
+```{r}
+read.table(paste0(dir, file), header = T) -> allData_agg
+```
+
+- Distribution
+```{r}
+summary(unlist(allData_agg[,-1]))
+```
+
+- Format eset
+```{r, eval=T}
+# Log-scale
+allData_agg_S <- allData_agg
+allData_agg_S[,-1] <- log10(allData_agg_S[,-1 ]+1)
+summary(unlist(allData_agg_S[,-1]))
+```
+
+```{r, eval=F}
+#scale FULL dataset
+allData_agg_S <- allData_agg
+allData_agg_S[,-1] <- apply(allData_agg_S[,-1 ], 2, function(x) {scale(x, center=F)})
+summary(unlist(allData_agg_S[,-1]))
+```
+```{r, eval=T}
+# Mean from genes in TWAS analysis
+summary(unlist(allData_agg_S[allData_agg_S$ID%in%full$ID,-1]))
+```
+
+- Top-TWAS subset
+```{r}
+# Scaled data
+e_twas_top <- allData_agg_S[allData_agg_S$ID%in%twas$ID,] 
+nrow(e_twas_top)
+```
+- Are all genes in data set?
+```{r}
+# Topt TWAS genes
+all(gl_top%in%allData_agg$ID)
+# Marker genes
+all(mark_all%in%allData_agg$ID)
+#mark_all[!mark_all%in%twas$ID]
+```
+
+- Compile PLOT data
+```{r}
+gl_cnis_top_PC <- append(gl_top, mark_all)
+# Subset expression
+cnis_top_PC <- allData_agg_S[allData_agg_S$ID%in%gl_cnis_top_PC, ]
+```
+```{r}
+# Set order
+cnis_order <- c("GCNIS", "Spermatogenesis", "ESC")
+```
+```{r}
+# expand for plotting
+cnis_top_L <- gather(cnis_top_PC, Celltype, ave_exp, c("GCNIS", "Spermatogenesis", "ESC"),factor_key=TRUE)
+cnis_top_L <- cnis_top_L %>%
+  mutate(ID=ID %>% fct_relevel(gl_cnis_top_PC) )
+```
+```{r}
+# Renane ID var. to Gene
+names(cnis_top_L)[1] <- "Gene"
+```
+```{r}
+cnis_top_L$GeneType <- ifelse(cnis_top_L$Gene%in%top_known, top_legend_G, 
+                               ifelse(cnis_top_L$Gene%in%top_novel, top_legend_NG, "Marker"))
+cnis_top_L$GeneType <- factor(cnis_top_L$GeneType, levels=c(top_legend_G, top_legend_NG, "Marker"))
+```
+
+## Explore marker genes (GCNIS: ESC)
+```{r}
+xlim = c(min(cnis_top_L$ave_exp), max(cnis_top_L$ave_exp))
+# dotplot
+ggplot(cnis_top_L[cnis_top_L$Gene%in%m7, ], aes(x = Gene, y = Celltype, size=1, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical") + guides(size = "none") + scale_color_gradient2(low = "lightskyblue1", mid = "turquoise1", high = "royalblue4", midpoint = mean(cnis_top_L$ave_exp), na.value = "gray" , limits=xlim) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+```
+- Select: 
+```{r}
+m7[3]
+```
+```{r}
+# Replace into template
+mkr_template[7] <- m7[3]
+```
+
+## Explore marker genes (GCNIS: Spermatogenesis)
+```{r}
+xlim = c(min(cnis_top_L$ave_exp), max(cnis_top_L$ave_exp))
+# dotplot
+ggplot(cnis_top_L[cnis_top_L$Gene%in%m8, ], aes(x = Gene, y = Celltype, size=1, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical") + guides(size = "none") + scale_color_gradient2(low = "lightskyblue1", mid = "turquoise1", high = "royalblue4", midpoint = mean(cnis_top_L$ave_exp), na.value = "gray" , limits=xlim) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+```
+- Select: 
+```{r}
+m8[1]
+```
+```{r}
+# Replace into template
+mkr_template[8] == m8[1]
+```
+
+## Explore marker genes (GCNIS: GCNIS)
+
+```{r}
+xlim = c(min(cnis_top_L$ave_exp), max(cnis_top_L$ave_exp))
+# dotplot
+ggplot(cnis_top_L[cnis_top_L$Gene%in%m9, ], aes(x = Gene, y = Celltype, size=1, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical") + guides(size = "none") + scale_color_gradient2(low = "lightskyblue1", mid = "turquoise1", high = "royalblue4", midpoint = mean(cnis_top_L$ave_exp), na.value = "gray" , limits=xlim) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+```
+- Print values.
+```{r}
+cnis_top_L[cnis_top_L$Gene%in%m9, ]
+```
+
+- Select: 
+```{r}
+m9[2]
+```
+```{r}
+# Replace into template
+mkr_template[9] <- m9[2]
+```
+
+
+### Marker plot
+```{r}
+# select genes
+gL3 <- as.character(append(gl_cnis_top_PC, mkr_template[7:9]))
+```
+
+```{r}
+cnis_order
+```
+
+```{r}
+p_m3 <- rbind(cnis_top_L[cnis_top_L$Celltype%in%cnis_order[3] & cnis_top_L$Gene%in%mkr_template[7], ],
+              cnis_top_L[cnis_top_L$Celltype%in%cnis_order[2] & cnis_top_L$Gene%in%mkr_template[8], ],
+              cnis_top_L[cnis_top_L$Celltype%in%cnis_order[1] & cnis_top_L$Gene%in%mkr_template[9], ])
+```
+
+
+```{r}
+p_m3x <- p_m3
+p_m3x$label <- as.character(p_m3x$Gene)
+p_m3x$Gene <- "Marker"
+p_m3x$GeneType <- " "
+
+tmp_c <- cnis_top_L[cnis_top_L$Gene%in%gL3 & cnis_top_L$GeneType!="Marker", ]
+tmp_c$label <- " "
+dp3 <- rbind(tmp_c, p_m3x )
+```
+
+```{r}
+# Secondary axis text
+sec_text3 <- rev(mkr_template[7:9])
+# y-axis labels
+dp3$Celltype <- as.factor(dp3$Celltype)
+lab_ctype <- levels(dp3$Celltype)
+ylims = limits = c(0.5,length(lab_ctype)+0.5)
+# plot
+
+DP_3 <- ggplot(dp3, aes(x = Gene, y = as.numeric(Celltype), size=1, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "horizontal", panel.grid.minor = element_blank()) + guides(size = "none") + scale_color_gradient2(low = "lightskyblue1", mid = "turquoise1", high = "royalblue4", midpoint = mean(cnis_top_L$ave_exp), na.value = "gray", name="Expr. level" ) + 
+  scale_y_continuous(breaks=1:length(lab_ctype), labels=lab_ctype, sec.axis = sec_axis(~., breaks=1:length(sec_text3), labels=sec_text3), limits = ylims) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+
+DP_3
+```
+
+\newpage
+# TGCT tumor expression (TCGA) dataset
+
+```{r}
+# file prefix
+dir="~/Documents/postdoc_FW/projects/TWAS/TCGA_tgct/"
+file="Data/norm_mat_150.aggregated_20230417.txt"
+```
+```{r}
+read.table(paste0(dir, file), header = T) -> allData_agg
+names(allData_agg)[3:4] <- c("Seminoma", "Non-seminoma")
+```
+
+- Are all top-TWAS/marker genes in data set?
+```{r}
+# Top TWAS genes
+all(gl_top%in%allData_agg$ID)
+# Marker genes
+all(mark_all%in%allData_agg$ID)
+```
+- Format data for PLOT
+```{r}
+# Subset expression
+tgct_top_PC <- allData_agg[allData_agg$ID%in%gl_top_PC, ]
+```
+
+```{r}
+# Set order
+tgct_order <- c("Non-seminoma", "Seminoma")
+```
+```{r}
+# expand for plotting
+tgct_top_L <- gather(tgct_top_PC, Celltype, ave_exp, c("Non-seminoma", "Seminoma"),factor_key=TRUE)
+tgct_top_L <- tgct_top_L %>%
+  mutate(ID=ID %>% fct_relevel(gl_top_PC) )
+```
+```{r}
+# Renane ID var. to Gene
+names(tgct_top_L)[2] <- "Gene"
+```
+```{r}
+tgct_top_L$GeneType <- ifelse(tgct_top_L$Gene%in%top_known, top_legend_G, 
+                               ifelse(tgct_top_L$Gene%in%top_novel, top_legend_NG, "Marker"))
+tgct_top_L$GeneType <- factor(tgct_top_L$GeneType, levels=c(top_legend_G, top_legend_NG, "Marker"))
+```
+
+
+- Plot all
+```{r}
+# xlim = c(min_allData_TS, max_allData_TS) # min-max scale values (in the twas-background set)
+# , limits=xlim
+
+ggplot(tgct_top_L, aes(x = Gene, y = Celltype, size=1, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "vertical") + guides(size = "none") + scale_color_gradient2(low = "darkseagreen1", mid = "springgreen", high = "darkgreen", midpoint = mean(tgct_top_L$ave_exp), na.value = "gray" ) +
+  facet_grid(~GeneType, space="free_x", scales="free_x",) +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+```
+
+- Plot with one marker only
+```{r}
+# Marker
+tgct_mkr <- rbind(tgct_top_L[tgct_top_L$Celltype=="Seminoma" & tgct_top_L$Gene==mkr_template[10], ], 
+                  tgct_top_L[tgct_top_L$Celltype=="Non-seminoma" & tgct_top_L$Gene==mkr_template[11], ])
+# format
+tgct_mkr$label <- as.character(tgct_mkr$Gene)
+tgct_mkr$Gene <- "Marker"
+tgct_mkr$GeneType <- " "
+
+# Combine with top genes
+tmp_d <- tgct_top_L[tgct_top_L$Gene%in%gl_top, ]
+tmp_d$label <- " "
+dp4 <- rbind(tmp_d, tgct_mkr )
+```
+- Marker plot
+```{r}
+# Secondary axis text
+# https://itecnote.com/tecnote/r-duplicating-and-modifying-discrete-axis-in-ggplot2/
+sec_text4 <- rev(mkr_template[10:11])
+```
+```{r}
+# y-axis labels
+dp4$Celltype <- as.factor(dp4$Celltype)
+lab_ctype <- levels(dp4$Celltype)
+ylims = limits = c(0.5,length(lab_ctype)+0.5)
+# plot
+
+DP_4 <- ggplot(dp4, aes(x = Gene, y = as.numeric(Celltype), size=1, color=ave_exp)) + geom_point() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.box = "horizontal", panel.grid.minor = element_blank()) + guides(size = "none") + scale_color_gradient2(low = "darkseagreen1", mid = "springgreen", high = "darkgreen", midpoint = mean(dp4$ave_exp), na.value = "gray", name="Expr. level" ) + 
+  scale_y_continuous(breaks=1:length(lab_ctype), labels=lab_ctype, sec.axis = sec_axis(~., breaks=1:length(sec_text4), labels=sec_text4), limits = ylims) +
+  facet_grid(~GeneType, space="free_x", scales="free_x") +
+  theme(strip.placement = "outside",
+      strip.background = element_rect(fill=NA, colour=NA)) +
+  labs(x=NULL, y=NULL) 
+
+DP_4
+```
+
+
+
+
+\newpage
+# Combine plots
+
+## Re-format plots
+```{r}
+DP_A <- DP_ab + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) 
+```
+
+```{r}
+DP_c <- DP_3  + theme(axis.text.x = element_blank(), legend.direction = "horizontal", axis.ticks.x = element_blank(), legend.title = element_text(size = 10, vjust = 0.8)) + 
+  facet_grid(~GeneType, space="free_x", scales="free_x") + 
+  theme(strip.placement = "outside", strip.text.x=element_blank(),
+      strip.background = element_rect(fill=NA, colour=NA), strip.background.y = element_rect(color="gray")) +
+  labs(x=NULL, y=NULL) 
+```
+
+```{r}
+DP_d <- DP_4  + theme(legend.direction = "horizontal", legend.title = element_text(size = 10, vjust = 0.8)) + 
+  facet_grid(~GeneType, space="free_x", scales="free_x") + 
+  theme(strip.placement = "outside", strip.text.x=element_blank(),
+      strip.background = element_rect(fill=NA, colour=NA), strip.background.y = element_rect(color="gray")) +
+  labs(x=NULL, y=NULL) 
+```
+
+
+## Create figure
+```{r}
+# library("ggpubr")
+
+figure <- ggarrange(DP_A, DP_c, DP_d,
+                    labels = c("A", "B", "C"),
+                    ncol = 1, nrow = 3, align = "v", heights = c(6,3,3.5))
+figure
+```
+```{r, eval=F}
+# with no labels
+ggarrange(DP_A, DP_c, DP_d, labels = NULL, ncol = 1, nrow = 3, align = "v", heights = c(6,3,3.5))
+```
+
+## Save
+```{r}
+dir_out="/home/emiuga/Documents/postdoc_FW/projects/testis/single_cell/Output/"
+plot_name=paste0("Dotplot_gene_expression_", ver, ".png")
+```
+
+```{r, eval=T}
+# SAVE plot
+png(file=paste0(dir_out, plot_name), width=9, height=6, units = "in", res=600 )
+figure
+dev.off()
+```
+```{r, eval=F}
+# SAVE plot
+pdf(file=paste0(dir_out, plot_name), width=9, height=6, units = "in")
+figure
+dev.off()
+```
+
+
