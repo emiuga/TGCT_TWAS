@@ -1,0 +1,89 @@
+---
+title: "Process tumor expression dataset (TCGA-TGCT)"
+author: "Emilio Ugalde"
+date: "April 18, 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RColorBrewer)
+library(tidyverse)
+```
+
+```{r}
+# working directory
+dir="~/Documents/postdoc_FW/projects/TWAS/TCGA_tgct/"
+setwd(dir)
+```
+
+## Output file
+```{r}
+# File path and prefix
+file_out="../Data/norm_mat_150.aggregated_20230417.txt"
+```
+
+## INPUT
+```{r}
+# Only-normalized data
+file="Data/norm_mat_150.txt"
+# annotations
+file_annot="Data/published_samps_hist_anc.txt"
+# Scaled data 
+# file_s="Data/final_normalized_exp.bed.gz"
+```
+
+```{r}
+# library(data.table)
+# fread(paste0(dir, file)) -> eset
+read.delim(paste0(dir, file)) -> eset
+```
+
+```{r}
+#read.delim(paste0(dir, file_s)) -> tgct
+read.delim(paste0(dir, file_annot), header = T) -> annot
+```
+
+```{r, eval=F}
+# Get gene IDs
+gids <- read.delim("../../CNIS/annot/HGNC_genenames.txt", header = T)
+names(gids)[c(1,7)] <- c("ID", "Ensembl")
+tgct <- merge(tgct, by.x = "pid", gids[,c(1,7)], by.y="Ensembl", all.x=T)
+```
+
+## Format data
+```{r}
+# Edit TGCA ids
+colnames(eset) <- append(names(eset[,c(1:2)]), str_replace_all(names(eset[,-c(1:2)]), '[.]','-') )
+```
+
+- Histology types
+```{r}
+table(annot$EPC_Histology_20220317)
+# Sem vs non-Sem
+table(annot$EPC_Histology_20220317=="Seminoma")
+```
+
+```{r}
+annot$id <- paste0(annot$V1, "-01A")
+sem <- which(names(eset)%in%annot[annot$EPC_Histology_20220317=="Seminoma", ]$id)
+non <- which(names(eset)%in%annot[annot$EPC_Histology_20220317!="Seminoma", ]$id)
+```
+
+## Aggregate on histology type by MEAN gene-level expression
+```{r}
+agg <- data.frame(ENSEMBL.ID=eset$Gene.stable.ID, ID=eset$Gene.name)
+
+# Average log10-transformed expression
+agg$sem_avlog <- rowMeans(log10(eset[, sem]+1))
+agg$non_avlog <- rowMeans(log10(eset[, non]+1))
+```
+
+```{r}
+summary(agg[,-c(1,2)])
+```
+
+## Save filtered data set (not scaled)
+```{r}
+write.table(agg, file=file_out, col.names=T, row.names=F, quote=F, sep="\t")
+```
